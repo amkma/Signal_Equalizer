@@ -1,89 +1,350 @@
+/* === Advanced UI Theme - Instagram Inspired === */
+
+/* [1] Root Variables & Global Styles */
+:root {
+  /* Instagram Gradient Colors */
+  --insta-orange: #fa7e1e;
+  --insta-pink: #d62976;
+  --insta-purple: #962fbf;
+  --insta-gradient: linear-gradient(45deg, var(--insta-orange), var(--insta-pink), var(--insta-purple));
+
+  /* New Theme Palette */
+  --bg-darkest: #000000;
+  --bg-dark: #121212;
+  --panel-bg: #1e1e1e;
+  --border-color: #363636;
+  --text-light: #ffffff;
+  --text-muted: #a8a8a8;
+
+  /* Primary accent is now the Instagram Pink */
+  --primary: var(--insta-pink);
+  --primary-glow: rgba(214, 41, 118, 0.25);
+
+  --success: #28a745;
+  --danger: #dc3545;
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: 'Fira Code', monospace;
+}
+
+* {
+  box-sizing: border-box;
+}
+
 body {
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-    margin: 0;
-    background-color: #f0f2f5;
-    color: #333;
-    line-height: 1.6;
+  margin: 0;
+  background: var(--bg-dark);
+  color: var(--text-light);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
-.container {
-    max-width: 1100px;
-    margin: 0 auto;
-    padding: 0 20px;
+canvas {
+  width: 100%;
+  background: var(--bg-darkest);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  margin-top: 12px;
 }
 
-.navbar {
-    background-color: #fff;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-    padding: 1rem 0;
-    position: sticky;
-    top: 0;
-    z-index: 1000;
+/* [2] Main Layout & Panels */
+.panel {
+  background: var(--panel-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  padding: 16px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
 }
 
-.navbar .container {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
+.left-panel, .center-panel, .right-panel {
+  background: var(--panel-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  padding: 16px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
 }
 
-.navbar-brand {
-    font-size: 1.5rem;
-    font-weight: bold;
-    color: #007bff;
-    text-decoration: none;
+.panel-title {
+  margin: 0 0 16px 0;
+  color: var(--text-light);
+  font-weight: 700;
+  font-size: 1.2em;
+  border-bottom: 1px solid var(--border-color);
+  padding-bottom: 12px;
 }
 
-.navbar-nav {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-    display: flex;
+.right-panel.hidden {
+  display: none;
 }
 
-.nav-item {
-    margin-left: 20px;
+/* [3] Header Toolbar */
+.topbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 20px;
+  background: var(--panel-bg);
+  border-bottom: 1px solid var(--border-color);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.25);
 }
 
-.nav-link {
-    text-decoration: none;
-    color: #555;
-    font-weight: 500;
-    transition: color 0.3s ease;
+.brand {
+  font-weight: 700;
+  font-size: 1.35rem;
+  /* Apply gradient to the brand text */
+  background: var(--insta-gradient);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  text-fill-color: transparent;
 }
 
-.nav-link:hover {
-    color: #007bff;
+.controls-row {
+  display: flex;
+  gap: 12px;
+  align-items: center;
 }
 
-main.container {
-    padding-top: 40px;
-    padding-bottom: 40px;
+/* [4] Buttons & Controls */
+button, .file-btn span, select {
+  background: var(--bg-dark);
+  color: var(--text-light);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  padding: 8px 14px;
+  cursor: pointer;
+  font-family: var(--font-sans);
+  font-weight: 600;
+  font-size: 14px;
+  transition: all 0.2s ease;
 }
 
-.hero {
-    text-align: center;
-    padding: 80px 20px;
-    background-color: #fff;
-    border-radius: 8px;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+button:hover, .file-btn span:hover, select:hover {
+  border-color: var(--primary);
+  background: #222222;
 }
 
-.hero h1 {
-    font-size: 3rem;
-    margin-bottom: 20px;
-    color: #333;
+button:active {
+  transform: translateY(1px);
 }
 
-.hero p {
-    font-size: 1.2rem;
-    color: #666;
+/* Special Button Variants */
+.btn-primary, #btn-run-ai {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: white;
+  box-shadow: 0 2px 8px var(--primary-glow);
+}
+.btn-primary:hover, #btn-run-ai:hover {
+  background: #c21a64; /* Darker pink */
+  border-color: #c21a64;
 }
 
-.footer {
-    background-color: #343a40;
-    color: #fff;
-    text-align: center;
-    padding: 20px 0;
-    margin-top: 40px;
+.btn-danger, #btn-clear-subband {
+  background: transparent;
+  border-color: var(--danger);
+  color: var(--danger);
+}
+.btn-danger:hover, #btn-clear-subband:hover {
+  background: rgba(220, 53, 69, 0.1);
+  color: white;
+}
+
+
+.chk {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  padding: 8px 12px;
+  border-radius: 6px;
+  transition: background 0.2s ease;
+}
+.chk:hover {
+  background: var(--bg-dark);
+}
+
+.tool-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* [5] Uploader */
+.uploader {
+  padding: 20px;
+}
+.drop {
+  border: 3px dashed var(--border-color);
+  border-radius: 12px;
+  height: 140px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--panel-bg);
+  transition: all 0.2s ease;
+  cursor: pointer;
+}
+.drop.drag, .drop:hover {
+  /* Use gradient for the border */
+  border-image-slice: 1;
+  border-image-source: var(--insta-gradient);
+  background: var(--bg-dark);
+  box-shadow: 0 0 25px var(--primary-glow);
+}
+.hint {
+  color: var(--text-muted);
+  text-align: center;
+  font-size: 1.1em;
+  font-weight: 600;
+}
+
+/* [6] Workspace & Bottom Layout */
+.workspace {
+  display: grid;
+  grid-template-columns: 320px 1fr 0px; /* AI panel hidden by default */
+  gap: 20px;
+  padding: 0 20px;
+}
+.workspace.ai-visible {
+  grid-template-columns: 320px 1fr 320px;
+}
+
+.bottom-panels {
+  padding: 20px;
+}
+.twocol {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+}
+.sync-controls {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  margin-top: 20px;
+  padding: 16px;
+}
+
+/* [7] Slider Styles (from JS) */
+.sliders {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 16px;
+}
+.sb-row { /* This class is created by main.js */
+  background: var(--bg-dark);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 12px;
+}
+.sb-title {
+  font-weight: 600;
+  color: var(--text-light);
+  margin-bottom: 10px;
+  font-size: 0.95em;
+}
+.sb-row label {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+  color: var(--text-muted);
+}
+.sb-gain {
+  font-family: var(--font-mono);
+  color: var(--primary);
+  font-weight: 700;
+  font-size: 1.1em;
+  margin-left: 12px;
+}
+
+/* Styling the <input type="range"> */
+input[type=range] {
+  width: 100%;
+  -webkit-appearance: none;
+  background: transparent;
+  margin: 8px 0;
+}
+input[type=range]:focus {
+  outline: none;
+}
+
+/* Thumb */
+input[type=range]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  height: 18px;
+  width: 18px;
+  border-radius: 50%;
+  background: var(--primary);
+  cursor: pointer;
+  margin-top: -6.5px; /* Center on track */
+  box-shadow: 0 0 8px var(--primary-glow);
+}
+input[type=range]::-moz-range-thumb {
+  height: 18px;
+  width: 18px;
+  border-radius: 50%;
+  background: var(--primary);
+  cursor: pointer;
+  border: none;
+  box-shadow: 0 0 8px var(--primary-glow);
+}
+
+/* Track */
+input[type=range]::-webkit-slider-runnable-track {
+  width: 100%;
+  height: 5px;
+  cursor: pointer;
+  background: var(--border-color);
+  border-radius: 3px;
+}
+input[type=range]:hover::-webkit-slider-runnable-track {
+  background: #444444;
+}
+input[type=range]::-moz-range-track {
+  width: 100%;
+  height: 5px;
+  cursor: pointer;
+  background: var(--border-color);
+  border-radius: 3px;
+}
+input[type=range]:hover::-moz-range-track {
+  background: #444444;
+}
+
+
+/* [8] Status Bar */
+.statusbar {
+  padding: 12px 20px;
+  border-top: 1px solid var(--border-color);
+  background: var(--bg-darkest);
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 13px;
+}
+.statusbar span {
+  color: var(--text-light);
+  font-weight: 600;
+}
+
+/* --- NEW LOADER STYLES --- */
+.loader-bar {
+  width: 100%;
+  height: 4px;
+  margin-top: 12px;
+  border-radius: 2px;
+  background: var(--insta-gradient);
+  background-size: 200% auto;
+  animation: loader-anim 1.2s linear infinite;
+}
+.loader-bar.hidden {
+  display: none;
+}
+@keyframes loader-anim {
+  0% { background-position: 0% 50%; }
+  100% { background-position: 200% 50%; }
 }
