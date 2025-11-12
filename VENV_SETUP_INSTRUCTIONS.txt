@@ -3,7 +3,7 @@ cd equalizer_app\.venvan
 python -m venv .human_sep_venv
 .human_sep_venv\Scripts\activate
 pip install --upgrade pip
-pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
+pip install torch torchvision torchaudio
 pip install speechbrain transformers librosa soundfile numpy scipy
 deactivate
 
