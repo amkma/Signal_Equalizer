@@ -1,10 +1,78 @@
-{% extends 'base.html' %}
-
-{% block title %}Home - Signal Equalizer{% endblock %}
+{% extends "base.html" %}
+{% load static %}
 
 {% block content %}
-<div class="hero">
-    <h1>Welcome to the Signal Equalizer</h1>
-    <p>Analyze and manipulate signals from various sources.</p>
-</div>
+
+<section class="uploader">
+  <div id="drop-zone" class="drop"> <div class="hint">Drag & drop an audio file here<br>or click to browse</div>
+  </div>
+</section>
+
+<main class="workspace">
+
+  <aside class="left-panel">
+    <div class="panel-title">
+      <span>Equalizer</span>
+      <span id="eq-mode-label"></span>
+    </div>
+
+    <div id="generic-tools" class="tool-row">
+      <button id="btn-add-subband">Add Sub-Band</button>
+      <button id="btn-clear-subband" class="btn-danger">Clear</button>
+      <button id="btn-scheme-save">Save scheme</button>
+      <label class="file-btn">
+        <input id="file-scheme" type="file" accept=".json" style="display:none"/>
+        <span id="btn-scheme-load">Load scheme</span>
+      </label>
+    </div>
+
+    <div id="eq-sliders" class="sliders"></div>
+  </aside>
+
+  <section class="center-panel">
+    <div class="panel-title">Spectrum (click & drag in Generic mode to create band)</div>
+    <canvas id="fft-canvas" width="1200" height="260"></canvas>
+
+    <div id="spectrum-loader" class="loader-bar hidden"></div>
+
+  </section>
+
+  <aside id="ai-panel" class="right-panel hidden">
+    <div class="panel-title">AI Models</div>
+    <div class="tool-row">
+      <label>Model:
+        <select id="ai-model">
+          <option value="demucs">Demucs (music)</option>
+          <option value="voices">VoiceSeparator</option>
+        </select>
+      </label>
+      <button id="btn-run-ai" class="btn-primary">Run AI on input</button>
+    </div>
+    <div id="ai-sliders" class="sliders"></div>
+    <div id="ai-outputs" class="ai-outputs"></div>
+  </aside>
+
+</main>
+
+<section class="bottom-panels">
+  <div class="twocol">
+
+    <div class="panel">
+      <div class="panel-title">Input</div>
+      <audio id="audio-in" controls></audio> <canvas id="wave-in" width="1200" height="160"></canvas> <canvas id="spec-in" width="1200" height="180"></canvas> </div>
+
+    <div class="panel">
+      <div class="panel-title">Output</div>
+      <audio id="audio-out" controls></audio> <canvas id="wave-out" width="1200" height="160"></canvas> <canvas id="spec-out" width="1200" height="180"></canvas> </div>
+
+  </div>
+
+  <div class="sync-controls panel">
+    <button id="play-input">Play Input</button>
+    <button id="play-output">Play Output</button>
+    <button id="sync-reset">Reset View</button>
+    <span id="status"></span>
+  </div>
+</section>
+
 {% endblock %}
