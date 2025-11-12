@@ -1,0 +1,22 @@
+# 1. HUMAN VOICE VENV
+cd equalizer_app\.venvan
+python -m venv .human_sep_venv
+.human_sep_venv\Scripts\activate
+pip install --upgrade pip
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
+pip install speechbrain transformers librosa soundfile numpy scipy
+deactivate
+
+# 2. MUSIC VENV
+python -m venv .music_venv
+.music_venv\Scripts\activate
+pip install --upgrade pip
+pip install spleeter tensorflow==2.5.0 protobuf==3.20.3 "numpy<1.24" ffmpeg-python
+deactivate
+
+# 3. GENDER VENV
+python -m venv .inaspeechan_venv
+.inaspeechan_venv\Scripts\activate
+pip install --upgrade pip
+pip install tensorflow==2.12.0 numpy==1.23.5 keras==2.12.0 pyannote.audio librosa soundfile scikit-learn inaSpeechSegmenter
+deactivate

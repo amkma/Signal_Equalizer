@@ -1,2 +1,16 @@
-.idea
 .venv
+equalizer_app/.venvan/.human_sep_venv
+equalizer_app/ai_models/human/__pycache__
+equalizer_app/ai_models/human/ai_models_cache
+equalizer_app/ai_models/human/pretrained_models
+equalizer_app/ai_models/music/__pycache__
+equalizer_app/ai_models/music/pretrained_models
+equalizer_app/ai_models/music/.venv
+equalizer_app/.venvan/.inaspeechan_venv
+equalizer_app/__pycache__
+equalizer_app/.venvan/.music_venv
+pretrained_models/4stems
+.idea
+equalizer_app/static
+equalizer_app/templates
+equalizer_app/__pycache__

@@ -1,0 +1,5 @@
+inaSpeechSegmenter==0.7.6
+tensorflow>=2.12.0,<2.13
+keras>=2.12.0,<2.13
+numpy>=1.22,<1.24
+scikit-learn
