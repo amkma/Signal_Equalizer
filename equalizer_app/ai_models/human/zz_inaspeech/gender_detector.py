@@ -13,14 +13,7 @@ from pathlib import Path
 import warnings
 warnings.filterwarnings('ignore')
 
-try:
-    from inaSpeechSegmenter import Segmenter
-    from inaSpeechSegmenter.features import media2feats
-except ImportError as e:
-    print(f"Error: inaSpeechSegmenter not found. Please activate the virtual environment:")
-    print(f"  equalizer_app/.venvan/.inaspeechan_venv/Scripts/activate")
-    print(f"  pip install inaSpeechSegmenter")
-    sys.exit(1)
+from inaSpeechSegmenter import Segmenter
 
 
 class GenderDetector:

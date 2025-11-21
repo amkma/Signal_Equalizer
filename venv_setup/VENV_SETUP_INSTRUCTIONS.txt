@@ -1,0 +1,28 @@
+# 1. HUMAN VOICE VENV
+cd equalizer_app\.venvan
+python -m venv equalizer_app\.venvan\.human_sep_venv
+equalizer_app\.venvan\.human_sep_venv\Scripts\activate
+pip install torch --index-url https://download.pytorch.org/whl/cpu
+pip install speechbrain
+pip install transformers==4.38.2
+pip install datasets soundfile librosa
+pip install huggingface-hub==0.19.4
+deactivate
+
+# 2. MUSIC VENV
+python -m venv equalizer_app\.venvan\.music_venv
+equalizer_app\.venvan\.music_venv\Scripts\activate
+pip install numpy==1.23.5
+pip install tensorflow==2.10.0
+pip install spleeter
+pip install ffmpeg-python==0.2.0
+deactivate
+
+# 3. GENDER VENV
+python -m venv equalizer_app\.venvan\.inaspeechan_venv
+equalizer_app\.venvan\.inaspeechan_venv\Scripts\activate
+pip install torch --index-url https://download.pytorch.org/whl/cpu
+pip install tensorflow-cpu
+pip install "numpy<1.26"
+pip install inaSpeechSegmenter
+deactivate

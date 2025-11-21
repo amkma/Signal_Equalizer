@@ -16,7 +16,6 @@ import torch
 import torchaudio
 import numpy as np
 import librosa
-from transformers import Wav2Vec2ForSequenceClassification, Wav2Vec2FeatureExtractor
 
 if not hasattr(torchaudio, 'list_audio_backends'):
     torchaudio.list_audio_backends = lambda: ['soundfile']

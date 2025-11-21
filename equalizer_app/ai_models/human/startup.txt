@@ -1,5 +1,0 @@
-.\.venv\Scripts\activate.ps1
-cd equalizer_app\ai_models\human
-python -m venv .human_sep_venv
-.\.human_sep_venv\Scripts\Activate.ps1
-pip install -r requirements.txt

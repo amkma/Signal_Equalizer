@@ -111,6 +111,11 @@ class MusicSeparator:
             json.dump(metadata, f, indent=2, ensure_ascii=False)
         
         total_time = time.time() - start_time
+        
+        input_size_mb = input_path.stat().st_size / (1024 * 1024)
+        output_size_mb = sum(info['size_mb'] for info in stem_info.values())
+        speed_ratio = duration / total_time if total_time > 0 else 0
+        
         print(f"Complete! Total time: {total_time:.2f}s")
         print(f"Output: {output_dir}")
         
@@ -120,7 +125,10 @@ class MusicSeparator:
             'stats': {
                 'input_duration': duration,
                 'total_time': total_time,
-                'separation_time': sep_time
+                'separation_time': sep_time,
+                'speed_ratio': speed_ratio,
+                'input_size_mb': input_size_mb,
+                'output_size_mb': output_size_mb
             },
             'metadata_path': str(metadata_path)
         }
