@@ -31,7 +31,6 @@
       <select id="mode-select">
         <option value="generic">Generic</option>
         <option value="music">Musical Instruments</option>
-        <option value="animals">Animal Sounds</option>
         <option value="human">Human Voices</option>
       </select>
     </label>
@@ -118,13 +117,13 @@
 </section>
 {% endblock %}
 
-<footer class="statusbar" id="statusbar">
+{% comment %} <footer class="statusbar" id="statusbar">
   File: <span id="sb-file">—</span> |
   Fs: <span id="sb-fs">—</span> |
   Length: <span id="sb-len">—</span> s |
   Cursor: <span id="sb-cur">0.00</span> s |
   Sync: <span id="sb-sync">OK</span>
-</footer>
+</footer> {% endcomment %}
 
 <script src="{% static 'js/main.js' %}"></script>
 </body>

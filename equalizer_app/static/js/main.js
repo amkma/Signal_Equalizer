@@ -406,17 +406,16 @@ function bindSaveLoad(){
     const j   = typeof buf==="object" ? buf : JSON.parse(new TextDecoder().decode(buf));
     downloadBlob(new TextEncoder().encode(JSON.stringify(j.data,null,2)), j.filename, "application/json");
   });
-  if(btnLoadScheme) btnLoadScheme.addEventListener("click", async ()=>{
-    if(!state.signalId) return alert("Upload a signal first.");
-    const inp=document.createElement("input"); inp.type="file"; inp.accept=".json,application/json";
-    inp.onchange=async()=>{ const f=inp.files?.[0]; if(!f) return; const data=JSON.parse(await f.text());
-      await apiPost(`/api/load_scheme/${state.signalId}/`, data);
-      state.mode=data.mode||"generic"; state.subbands=data.subbands||[]; state.customSliders=data.sliders||[];
-      if(modeSelect) modeSelect.value=state.mode;
-      renderEqSliders();
-      await applyEqualizer();
-    };
-    inp.click();
+  
+  const fileSchemeInput = firstSel("#file-scheme");
+  if(fileSchemeInput) fileSchemeInput.addEventListener("change", async (e)=>{
+    const f = e.target.files?.[0]; if(!f) return;
+    const data = JSON.parse(await f.text());
+    await apiPost(`/api/load_scheme/${state.signalId}/`, data);
+    state.mode=data.mode||"generic"; state.subbands=data.subbands||[]; state.customSliders=data.sliders||[];
+    if(modeSelect) modeSelect.value=state.mode;
+    renderEqSliders();
+    await applyEqualizer();
   });
   if(btnSaveSettings) btnSaveSettings.addEventListener("click", async ()=>{
     if(!state.signalId) return alert("Upload a signal first.");
@@ -425,16 +424,15 @@ function bindSaveLoad(){
     const j   = typeof buf==="object" ? buf : JSON.parse(new TextDecoder().decode(buf));
     downloadBlob(new TextEncoder().encode(JSON.stringify(j.data,null,2)), j.filename, "application/json");
   });
-  if(btnLoadSettings) btnLoadSettings.addEventListener("click", async ()=>{
-    // if(!state.signalId) return alert("Upload a signal first.");
-    const inp=document.createElement("input"); inp.type="file"; inp.accept=".json,application/json";
-    inp.onchange=async()=>{ const f=inp.files?.[0]; if(!f) return; const data=JSON.parse(await f.text());
-      await apiPost(`/api/load_settings/${state.signalId}/`, data);
-      state.scale=data.scale||"linear"; state.showSpectrograms=!!data.showSpectrograms; state.mode=data.mode||"generic"; state.subbands=data.subbands||[]; state.customSliders=data.sliders||[];
-      if(chkShowSpec) chkShowSpec.checked=state.showSpectrograms; if(modeSelect) modeSelect.value=state.mode;
-      await refreshAll();
-    };
-    inp.click();
+  
+  const fileSettingsInput = firstSel("#file-settings");
+  if(fileSettingsInput) fileSettingsInput.addEventListener("change", async (e)=>{
+    const f = e.target.files?.[0]; if(!f) return;
+    const data = JSON.parse(await f.text());
+    await apiPost(`/api/load_settings/${state.signalId}/`, data);
+    state.scale=data.scale||"linear"; state.showSpectrograms=!!data.showSpectrograms; state.mode=data.mode||"generic"; state.subbands=data.subbands||[]; state.customSliders=data.sliders||[];
+    if(chkShowSpec) chkShowSpec.checked=state.showSpectrograms; if(modeSelect) modeSelect.value=state.mode;
+    await refreshAll();
   });
 }
 
@@ -442,23 +440,33 @@ function bindSaveLoad(){
 function bindPlayback(){
   if(!audioIn || !audioOut) return;
 
-  // --- Players are now independent ---
-
-  if(btnPlayInput)  btnPlayInput.addEventListener("click", () => {
-    audioOut.pause(); // Pause the other player
-    audioIn.play();
+  if(btnPlayInput) btnPlayInput.addEventListener("click", () => {
+    if(audioIn.paused){
+      audioIn.play();
+      btnPlayInput.textContent = "Pause Input";
+    } else {
+      audioIn.pause();
+      btnPlayInput.textContent = "Play Input";
+    }
   });
 
   if(btnPlayOutput) btnPlayOutput.addEventListener("click", () => {
-    audioIn.pause(); // Pause the other player
-    audioOut.play();
+    if(audioOut.paused){
+      audioOut.play();
+      btnPlayOutput.textContent = "Pause Output";
+    } else {
+      audioOut.pause();
+      btnPlayOutput.textContent = "Play Output";
+    }
   });
 
-  if(btnSyncReset)  btnSyncReset.addEventListener("click", () => {
+  if(btnSyncReset) btnSyncReset.addEventListener("click", () => {
     audioIn.pause();
     audioOut.pause();
     audioIn.currentTime = 0;
     audioOut.currentTime = 0;
+    if(btnPlayInput) btnPlayInput.textContent = "Play Input";
+    if(btnPlayOutput) btnPlayOutput.textContent = "Play Output";
   });
 }
 
