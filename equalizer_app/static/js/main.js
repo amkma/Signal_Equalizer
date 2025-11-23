@@ -426,7 +426,7 @@ function bindSaveLoad(){
     downloadBlob(new TextEncoder().encode(JSON.stringify(j.data,null,2)), j.filename, "application/json");
   });
   if(btnLoadSettings) btnLoadSettings.addEventListener("click", async ()=>{
-    if(!state.signalId) return alert("Upload a signal first.");
+    // if(!state.signalId) return alert("Upload a signal first.");
     const inp=document.createElement("input"); inp.type="file"; inp.accept=".json,application/json";
     inp.onchange=async()=>{ const f=inp.files?.[0]; if(!f) return; const data=JSON.parse(await f.text());
       await apiPost(`/api/load_settings/${state.signalId}/`, data);

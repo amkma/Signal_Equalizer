@@ -16,3 +16,5 @@ equalizer_app/templates
 equalizer_app/__pycache__
 equalizer_app/utils/__pycache__
 equalizer_app/ai_models/human/zz_inaspeech/__pycache__
+# Signal_Equalizer/__pycache__
+# equalizer_app/__pycache__
