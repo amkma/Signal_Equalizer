@@ -26,7 +26,7 @@ const inputCanvas = firstSel("#wave-in");
 const outputCanvas = firstSel("#wave-out");
 const inCtx = inputCanvas ? inputCanvas.getContext("2d") : null;
 const outCtx = outputCanvas ? outputCanvas.getContext("2d") : null;
-const btnAddSubBand = firstSel("#btn-add-subband");
+// REMOVED: btnAddSubBand
 const btnClearSubBand = firstSel("#btn-clear-subband");
 const btnSaveScheme = firstSel("#btn-scheme-save");
 const btnLoadScheme = firstSel("#btn-scheme-load");
@@ -54,7 +54,13 @@ const state = {
   scale:"audiogram", showSpectrograms:true,
   mode:"generic", subbands:[], customSliders:[],
   selecting:false, selStartX:0, selEndX:0,
-  rawSpecIn: null, rawSpecOut: null
+  rawSpecIn: null, rawSpecOut: null,
+
+  // Animation & Caching
+  inputSamples: [],
+  outputSamples: [],
+  specInBitmap: null,
+  specOutBitmap: null
 };
 
 // High-Contrast Red Palette for Dark Theme
@@ -176,32 +182,102 @@ function drawSpectrum(mags, fmax, canvas, ctx, scale="linear"){
   }
 }
 
-function drawWavePreview(canvas,ctx,samples){
+// Draw Wave Function
+function drawWavePreview(canvas, ctx, samples, playheadRatio = null){
   if(!canvas||!ctx||!Array.isArray(samples)) return;
+
   ctx.clearRect(0,0,canvas.width,canvas.height);
-  ctx.fillStyle="#000"; ctx.fillRect(0,0,canvas.width,canvas.height);
-  const W=canvas.width, H=canvas.height;
-  const xLabels = []; const duration = state.duration || 0;
-  for(let i=0; i<=5; i++) xLabels.push({pos: i/5, text: (duration * i / 5).toFixed(1) + "s"});
-  drawGrid(ctx, W, H, xLabels, [{pos:0,text:"-1"},{pos:0.5,text:"0"},{pos:1,text:"1"}], "Time", "Amp");
-  const drawW = W - 30, drawH = H - 20, mid = drawH / 2;
-  ctx.strokeStyle="#a8a8a8"; ctx.lineWidth=1; ctx.beginPath();
-  for(let i=0;i<samples.length;i++){
-      const x = 30 + (i/(samples.length-1)) * drawW;
+  ctx.fillStyle="#000";
+  ctx.fillRect(0,0,canvas.width,canvas.height);
+
+  const W = canvas.width;
+  const H = canvas.height;
+
+  // Margins matching Spectrogram
+  const marginL = 75;
+  const marginR = 20;
+  const drawW = W - marginL - marginR;
+  const drawH = H - 20;
+  const mid = drawH / 2;
+
+  const xLabels = [];
+  const duration = state.duration || 0;
+  for(let i=0; i<=5; i++) {
+      xLabels.push({
+          pos: i/5,
+          text: (duration * i / 5).toFixed(1) + "s"
+      });
+  }
+
+  ctx.strokeStyle = "#444";
+  ctx.fillStyle = "#aaa";
+  ctx.lineWidth = 1;
+  ctx.font = "10px monospace";
+  ctx.textAlign = "center";
+
+  // X-Axis Line
+  ctx.beginPath(); ctx.moveTo(0, drawH); ctx.lineTo(W, drawH); ctx.stroke();
+
+  // Y-Axis Line
+  ctx.beginPath(); ctx.moveTo(marginL, 0); ctx.lineTo(marginL, H); ctx.stroke();
+
+  // Draw X Labels
+  xLabels.forEach(lbl => {
+      const x = marginL + (lbl.pos * drawW);
+      ctx.beginPath(); ctx.moveTo(x, drawH); ctx.lineTo(x, drawH + 5); ctx.stroke();
+      ctx.fillText(lbl.text, x, drawH + 15);
+  });
+
+  // Draw Y Labels
+  ctx.textAlign = "right";
+  const yLabels = [{pos:0,t:"-1"}, {pos:0.5,t:"0"}, {pos:1,t:"1"}];
+  yLabels.forEach(lbl => {
+      const y = drawH - (lbl.pos * drawH);
+      ctx.beginPath(); ctx.moveTo(marginL - 5, y); ctx.lineTo(marginL, y); ctx.stroke();
+      ctx.fillText(lbl.t, marginL - 8, y + 3);
+  });
+
+  ctx.fillText("Time", W - 10, drawH + 15);
+  ctx.fillText("Amp", marginL - 8, 10);
+
+  // Waveform
+  ctx.strokeStyle = "#a8a8a8";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+
+  const step = Math.max(1, Math.ceil(samples.length / drawW));
+
+  for(let i=0; i < samples.length; i += step){
+      const x = marginL + (i / (samples.length - 1)) * drawW;
       const y = mid - (samples[i] * mid);
       if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
   }
   ctx.stroke();
+
+  // Playhead Pointer
+  if (playheadRatio !== null && playheadRatio >= 0 && playheadRatio <= 1) {
+      const cursorX = marginL + (playheadRatio * drawW);
+      ctx.strokeStyle = "#ff0000";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(cursorX, 0);
+      ctx.lineTo(cursorX, drawH);
+      ctx.stroke();
+
+      ctx.fillStyle = "#ff0000";
+      ctx.beginPath();
+      ctx.arc(cursorX, 0, 4, 0, Math.PI * 2);
+      ctx.fill();
+  }
 }
 
 // --- Spectrogram Drawing (Dark Mode + Red Theme) ---
-function drawSpectrogramVisuals(canvas, axisCanvas, b64Data) {
+function drawSpectrogramVisuals(canvas, axisCanvas, b64Data, isInput=true) {
     const ctx = canvas.getContext("2d");
     const axisCtx = axisCanvas.getContext("2d");
     const W = canvas.width, H = canvas.height;
     const AxisW = axisCanvas.width, AxisH = axisCanvas.height;
 
-    // 1. Draw Spectrogram Image & Colorize
     const img = new Image();
     img.onload = () => {
         ctx.clearRect(0,0,W,H);
@@ -225,44 +301,41 @@ function drawSpectrogramVisuals(canvas, axisCanvas, b64Data) {
         };
 
         for(let i=0; i<data.length; i+=4) {
-            const val = data[i]; // Grayscale value
+            const val = data[i];
             const norm = val / 255;
             const rgb = interpolateColor(norm, redPalette);
             data[i] = rgb[0];
             data[i+1] = rgb[1];
             data[i+2] = rgb[2];
         }
-        ctx.putImageData(imageData, 0, 0);
+
+        createImageBitmap(imageData).then(bitmap => {
+            if(isInput) state.specInBitmap = bitmap;
+            else state.specOutBitmap = bitmap;
+            ctx.putImageData(imageData, 0, 0);
+        });
     };
     img.src = `data:image/png;base64,${b64Data}`;
 
-    // 2. Draw Axes Overlay (Dynamic Values)
+    // Axes
     axisCtx.clearRect(0,0,AxisW,AxisH);
-
     const pLeft = 75, pTop = 20;
     const graphW = 540, graphH = 250;
 
     axisCtx.font = "12px 'Fira Code', monospace";
     axisCtx.textAlign = "right";
-
     const gridColor = "#363636";
     const labelColor = "#a8a8a8";
-
-    // Use actual max freq from FFT (e.g. 22050)
     const maxFreq = state.fmax || 10000;
 
     const yTicks = 11;
     for(let i=0; i<yTicks; i++) {
         const norm = i / (yTicks - 1);
         let freq = 0;
-
-        // Logarithmic axis ticks to match warped image
         if(i===0) freq=0;
         else freq = maxFreq * Math.pow(norm, 4);
-
         const yPos = pTop + graphH - (norm * graphH);
 
-        // Grid
         axisCtx.strokeStyle = gridColor;
         axisCtx.lineWidth = 1;
         axisCtx.beginPath();
@@ -270,7 +343,6 @@ function drawSpectrogramVisuals(canvas, axisCanvas, b64Data) {
         axisCtx.lineTo(pLeft + graphW, yPos);
         axisCtx.stroke();
 
-        // Label
         axisCtx.fillStyle = labelColor;
         axisCtx.fillText((freq/1000).toFixed(1) + "k", pLeft - 10, yPos + 4);
     }
@@ -298,22 +370,34 @@ function drawSpectrogramVisuals(canvas, axisCanvas, b64Data) {
     axisCtx.strokeRect(pLeft, pTop, graphW, graphH);
 }
 
+function drawSpecWithCursor(ctx, bitmap, width, height, playheadRatio) {
+    if(!bitmap) return;
+    ctx.clearRect(0, 0, width, height);
+    ctx.drawImage(bitmap, 0, 0);
+
+    if (playheadRatio !== null && playheadRatio >= 0 && playheadRatio <= 1) {
+        const cursorX = playheadRatio * width;
+        ctx.strokeStyle = "#ff0000";
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(cursorX, 0);
+        ctx.lineTo(cursorX, height);
+        ctx.stroke();
+    }
+}
+
 async function refreshSpectrograms() {
     if(!state.signalId) return;
-
-    // Always fetch spectrograms automatically
     const specs = await apiGet(`/api/spectrograms/${state.signalId}/?scale_type=logarithmic`);
     const jSpecs = typeof specs === "object" ? specs : JSON.parse(new TextDecoder().decode(specs));
-
     state.rawSpecIn = jSpecs.in_png;
     state.rawSpecOut = jSpecs.out_png;
-
     renderSpectrograms();
 }
 
 function renderSpectrograms() {
-    if(state.rawSpecIn) drawSpectrogramVisuals(specInCanvas, specInAxis, state.rawSpecIn);
-    if(state.rawSpecOut) drawSpectrogramVisuals(specOutCanvas, specOutAxis, state.rawSpecOut);
+    if(state.rawSpecIn) drawSpectrogramVisuals(specInCanvas, specInAxis, state.rawSpecIn, true);
+    if(state.rawSpecOut) drawSpectrogramVisuals(specOutCanvas, specOutAxis, state.rawSpecOut, false);
 }
 
 // ---------- Main Refresh ----------
@@ -342,12 +426,13 @@ async function refreshAll(){
   const waves = await apiGet(`/api/wave_previews/${state.signalId}/`);
   const jWaves = typeof waves === "object" ? waves : JSON.parse(new TextDecoder().decode(waves));
 
-  drawWavePreview(inputCanvas, inCtx, jWaves.input);
-  drawWavePreview(outputCanvas, outCtx, jWaves.output);
+  state.inputSamples = jWaves.input;
+  state.outputSamples = jWaves.output;
+
+  drawWavePreview(inputCanvas, inCtx, jWaves.input, 0);
+  drawWavePreview(outputCanvas, outCtx, jWaves.output, 0);
 
   renderEqSliders();
-
-  // FORCE Spectrogram Load
   await refreshSpectrograms();
 
   if(spectrumLoader) spectrumLoader.classList.add("hidden");
@@ -377,8 +462,18 @@ function renderEqSliders(){
   if(state.mode === 'generic'){ renderGenericSubbands(); $('#generic-tools').style.display = 'flex'; }
   else { renderCustomizedSliders(); $('#generic-tools').style.display = 'none'; }
 }
+
 function renderGenericSubbands(){
-  if(!eqPanel) return; eqPanel.innerHTML="";
+  if(!eqPanel) return;
+  eqPanel.innerHTML="";
+
+  // UPDATED: Logic to disable/enable Clear button
+  const btnClear = document.querySelector("#btn-clear-subband");
+  if(btnClear) {
+      if(state.subbands.length > 0) btnClear.removeAttribute("disabled");
+      else btnClear.setAttribute("disabled", "true");
+  }
+
   state.subbands.forEach((b,idx)=>{
     const row=document.createElement("div"); row.className="sb-row";
     row.innerHTML = `<div class="sb-title">SubBand ${idx+1} [${b.fmin.toFixed(1)}–${b.fmax.toFixed(1)} Hz]</div><input type="range" min="0" max="2" step="0.01" value="${b.gain}" data-id="${b.id}"/><span class="sb-gain">${b.gain.toFixed(2)}x</span><button data-act="edit" data-id="${b.id}">Edit</button><button data-act="del" data-id="${b.id}" class="btn-danger">Delete</button>`;
@@ -390,6 +485,7 @@ function renderGenericSubbands(){
     else { const resp=window.prompt(`Edit [min,max,gain]`, `${sb.fmin}, ${sb.fmax}, ${sb.gain}`); if(!resp) return; const p=resp.split(",").map(s=>+s.trim()); if(p.length<3) return; sb.fmin=Math.min(p[0],p[1]); sb.fmax=Math.max(p[0],p[1]); sb.gain=Math.max(0,Math.min(2,p[2])); renderEqSliders(); await applyEqualizer(); }
   };
 }
+
 async function renderCustomizedSliders(){
   if(!eqPanel || !state.signalId) return; eqPanel.innerHTML = "<p>Loading sliders...</p>";
   try {
@@ -424,10 +520,14 @@ async function refreshOutputs(){
   drawSpectrum(jSpec.mags, jSpec.fmax, spectrumCanvas, spectrumCtx, state.scale);
   const waves = await apiGet(`/api/wave_previews/${state.signalId}/`);
   const jWaves = typeof waves === "object" ? waves : JSON.parse(new TextDecoder().decode(waves));
-  drawWavePreview(outputCanvas, outCtx, jWaves.output);
+
+  state.outputSamples = jWaves.output;
+  drawWavePreview(outputCanvas, outCtx, jWaves.output, 0);
+
   await refreshSpectrograms();
   if(spectrumLoader) spectrumLoader.classList.add("hidden");
 }
+
 function bindToggles(){
   if(btnAddSubBand) btnAddSubBand.addEventListener("click", ()=> { if(!state.signalId) return alert("Upload a signal first."); alert("Select an interval on the spectrum by dragging with the mouse."); });
   if(btnClearSubBand) btnClearSubBand.addEventListener("click", async ()=>{ if(state.mode !== 'generic' || !state.signalId) return; state.subbands = []; renderEqSliders(); await applyEqualizer(); });
@@ -441,11 +541,52 @@ function bindSaveLoad(){
   const fileSchemeInput = firstSel("#file-scheme");
   if(fileSchemeInput) fileSchemeInput.addEventListener("change", async (e)=>{ const f = e.target.files?.[0]; if(!f) return; const data = JSON.parse(await f.text()); await apiPost(`/api/load_scheme/${state.signalId}/`, data); state.mode=data.mode||"generic"; state.subbands=data.subbands||[]; state.customSliders=data.sliders||[]; if(modeSelect) modeSelect.value=state.mode; renderEqSliders(); await applyEqualizer(); });
 }
+
 function bindPlayback(){
   if(!audioIn || !audioOut) return;
-  btnPlayInput.addEventListener("click", () => { if(audioIn.paused){ audioIn.play(); btnPlayInput.textContent = "Pause Input"; } else { audioIn.pause(); btnPlayInput.textContent = "Play Input"; }});
-  btnPlayOutput.addEventListener("click", () => { if(audioOut.paused){ audioOut.play(); btnPlayOutput.textContent = "Pause Output"; } else { audioOut.pause(); btnPlayOutput.textContent = "Play Output"; }});
-  btnSyncReset.addEventListener("click", () => { audioIn.pause(); audioOut.pause(); audioIn.currentTime = 0; audioOut.currentTime = 0; btnPlayInput.textContent = "Play Input"; btnPlayOutput.textContent = "Play Output"; });
+
+  function updateVisuals() {
+      requestAnimationFrame(updateVisuals);
+
+      if (!audioIn.paused) {
+          const ratio = audioIn.currentTime / state.duration;
+          if(state.inputSamples.length > 0)
+              drawWavePreview(inputCanvas, inCtx, state.inputSamples, ratio);
+          if(state.specInBitmap)
+              drawSpecWithCursor(specInCtx, state.specInBitmap, specInCanvas.width, specInCanvas.height, ratio);
+      }
+
+      if (!audioOut.paused) {
+          const ratio = audioOut.currentTime / state.duration;
+          if(state.outputSamples.length > 0)
+              drawWavePreview(outputCanvas, outCtx, state.outputSamples, ratio);
+          if(state.specOutBitmap)
+              drawSpecWithCursor(specOutCtx, state.specOutBitmap, specOutCanvas.width, specOutCanvas.height, ratio);
+      }
+  }
+  requestAnimationFrame(updateVisuals);
+
+  btnPlayInput.addEventListener("click", () => {
+    if(audioIn.paused){ audioIn.play(); btnPlayInput.textContent = "Pause Input"; }
+    else { audioIn.pause(); btnPlayInput.textContent = "Play Input"; }
+  });
+
+  btnPlayOutput.addEventListener("click", () => {
+    if(audioOut.paused){ audioOut.play(); btnPlayOutput.textContent = "Pause Output"; }
+    else { audioOut.pause(); btnPlayOutput.textContent = "Play Output"; }
+  });
+
+  btnSyncReset.addEventListener("click", () => {
+    audioIn.pause(); audioOut.pause();
+    audioIn.currentTime = 0; audioOut.currentTime = 0;
+    btnPlayInput.textContent = "Play Input"; btnPlayOutput.textContent = "Play Output";
+
+    if(state.inputSamples.length > 0) drawWavePreview(inputCanvas, inCtx, state.inputSamples, 0);
+    if(state.outputSamples.length > 0) drawWavePreview(outputCanvas, outCtx, state.outputSamples, 0);
+    if(state.specInBitmap) drawSpecWithCursor(specInCtx, state.specInBitmap, specInCanvas.width, specInCanvas.height, 0);
+    if(state.specOutBitmap) drawSpecWithCursor(specOutCtx, state.specOutBitmap, specOutCanvas.width, specOutCanvas.height, 0);
+  });
 }
+
 function init(){ bindUpload(); bindSpectrumSelection(); bindPlayback(); bindToggles(); bindSaveLoad(); setStatus("Ready."); }
 document.addEventListener("DOMContentLoaded", init);

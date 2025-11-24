@@ -17,14 +17,13 @@
       <span id="eq-mode-label"></span>
     </div>
 
-    <div id="generic-tools" class="tool-row">
-      <button id="btn-add-subband">Add Sub-Band</button>
-      <button id="btn-clear-subband" class="btn-danger">Clear</button>
+    <div id="generic-tools" class="tool-row single-line">
       <button id="btn-scheme-save">Save scheme</button>
       <label class="file-btn">
         <input id="file-scheme" type="file" accept=".json" style="display:none"/>
         <span id="btn-scheme-load">Load scheme</span>
       </label>
+      <button id="btn-clear-subband" class="btn-danger" disabled>Clear</button>
     </div>
 
     <div id="eq-sliders" class="sliders"></div>
@@ -55,29 +54,20 @@
 
 <section class="bottom-panels">
 
-  <!-- WAVEFORMS -->
   <div class="twocol">
     <div class="panel">
       <div class="panel-title">Input Signal</div>
       <audio id="audio-in" controls style="width:100%; margin-bottom:10px;"></audio>
-      <canvas id="wave-in" width="800" height="120"></canvas>
+      <canvas id="wave-in" width="635" height="120"></canvas>
     </div>
 
     <div class="panel">
       <div class="panel-title">Output Signal</div>
       <audio id="audio-out" controls style="width:100%; margin-bottom:10px;"></audio>
-      <canvas id="wave-out" width="800" height="120"></canvas>
+      <canvas id="wave-out" width="635" height="120"></canvas>
     </div>
   </div>
 
-  <div class="sync-controls panel" style="margin-top: 15px;">
-    <button id="play-input">Play Input</button>
-    <button id="play-output">Play Output</button>
-    <button id="sync-reset">Reset View</button>
-    <span id="status"></span>
-  </div>
-
-  <!-- SPECTROGRAMS (Clean, No Controls) -->
   <div class="twocol" style="margin-top: 20px;">
     <div class="spectrogram-container panel">
       <div class="panel-title">Input Spectrogram</div>
@@ -94,6 +84,13 @@
         <canvas id="spec-out-axis" width="635" height="290"></canvas>
       </div>
     </div>
+  </div>
+
+  <div class="sync-controls panel" style="margin-top: 20px;">
+    <button id="play-input">Play Input</button>
+    <button id="play-output">Play Output</button>
+    <button id="sync-reset">Reset View</button>
+    <span id="status"></span>
   </div>
 
 </section>

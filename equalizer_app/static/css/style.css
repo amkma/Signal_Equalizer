@@ -113,6 +113,14 @@ button:hover, .file-btn span:hover, select:hover {
   background: #222222;
 }
 
+/* Disabled State */
+button:disabled, button[disabled] {
+  opacity: 0.5;
+  cursor: not-allowed;
+  filter: grayscale(100%);
+  pointer-events: none;
+}
+
 .btn-primary, #btn-run-ai {
   background: var(--primary);
   border-color: var(--primary);
@@ -126,17 +134,21 @@ button:hover, .file-btn span:hover, select:hover {
   color: var(--danger);
 }
 
-.chk {
-  display: flex;
-  gap: 6px;
-  align-items: center;
-  padding: 8px 12px;
-  border-radius: 6px;
-  transition: background 0.2s ease;
-}
-.chk:hover { background: var(--bg-dark); }
-
 .tool-row { display: flex; gap: 8px; flex-wrap: wrap; }
+
+/* NEW: Single Line Layout for Equalizer Tools */
+.tool-row.single-line {
+    flex-wrap: nowrap;
+    width: 100%;
+}
+.tool-row.single-line > * {
+    flex: 1; /* Distribute width equally */
+    text-align: center;
+    white-space: nowrap;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
 
 /* [5] Uploader */
 .uploader { padding: 20px; }
@@ -175,8 +187,25 @@ button:hover, .file-btn span:hover, select:hover {
   margin-top: 20px; padding: 16px;
 }
 
-/* [7] Slider Styles */
-.sliders { display: flex; flex-direction: column; gap: 12px; margin-top: 16px; }
+/* [7] Slider Styles & Scrolling */
+.sliders {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin-top: 16px;
+
+    /* NEW: Scrollbar Logic */
+    max-height: 400px;
+    overflow-y: auto;
+    padding-right: 5px; /* prevent content hiding behind scrollbar */
+}
+
+/* Custom Scrollbar for Sliders */
+.sliders::-webkit-scrollbar { width: 6px; }
+.sliders::-webkit-scrollbar-track { background: var(--bg-dark); border-radius: 3px; }
+.sliders::-webkit-scrollbar-thumb { background: var(--border-color); border-radius: 3px; }
+.sliders::-webkit-scrollbar-thumb:hover { background: var(--primary); }
+
 .sb-row {
   background: var(--bg-dark);
   border: 1px solid var(--border-color);
@@ -203,13 +232,8 @@ input[type=range]::-webkit-slider-runnable-track {
   font-family: var(--font-mono);
 }
 
-/* --- NEW SPECTROGRAM STYLES (DARK MODE) --- */
-.spectrogram-container {
-  /* Now uses .panel style by default */
-  position: relative;
-  padding: 15px;
-}
-
+/* Spectrogram Styles */
+.spectrogram-container { position: relative; padding: 15px; }
 .spec-wrapper {
   position: relative;
   width: 100%;
@@ -218,8 +242,6 @@ input[type=range]::-webkit-slider-runnable-track {
   border-radius: 4px;
   overflow: hidden;
 }
-
-/* The actual spectrogram image canvas */
 canvas[id^="spec-"][id$="-canvas"] {
   background: #000;
   width: calc(100% - 75px - 20px);
@@ -229,18 +251,9 @@ canvas[id^="spec-"][id$="-canvas"] {
   border: none;
   display: block;
 }
-
-/* The axes overlay canvas */
 canvas[id^="spec-"][id$="-axis"] {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  pointer-events: none;
-  background: transparent;
-  border: none;
-  margin: 0;
+  position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+  pointer-events: none; background: transparent; border: none; margin: 0;
 }
 
 .loader-bar {
