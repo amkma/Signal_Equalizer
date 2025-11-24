@@ -136,18 +136,30 @@ button:disabled, button[disabled] {
 
 .tool-row { display: flex; gap: 8px; flex-wrap: wrap; }
 
-/* NEW: Single Line Layout for Equalizer Tools */
+/* Single Line Layout */
 .tool-row.single-line {
     flex-wrap: nowrap;
     width: 100%;
 }
-.tool-row.single-line > * {
+
+/* NEW: Specific styling for the Equalizer Button Group to fit snugly */
+.eq-btn-group {
+    gap: 6px; /* reduce gap */
+}
+
+.eq-btn-group > button,
+.eq-btn-group > .file-btn > span {
     flex: 1; /* Distribute width equally */
     text-align: center;
     white-space: nowrap;
     display: flex;
     align-items: center;
     justify-content: center;
+
+    /* Make buttons slightly smaller to fit */
+    padding: 6px 4px;
+    font-size: 12px;
+    height: 36px;
 }
 
 /* [5] Uploader */
@@ -193,14 +205,10 @@ button:disabled, button[disabled] {
     flex-direction: column;
     gap: 12px;
     margin-top: 16px;
-
-    /* NEW: Scrollbar Logic */
     max-height: 400px;
     overflow-y: auto;
-    padding-right: 5px; /* prevent content hiding behind scrollbar */
+    padding-right: 5px;
 }
-
-/* Custom Scrollbar for Sliders */
 .sliders::-webkit-scrollbar { width: 6px; }
 .sliders::-webkit-scrollbar-track { background: var(--bg-dark); border-radius: 3px; }
 .sliders::-webkit-scrollbar-thumb { background: var(--border-color); border-radius: 3px; }

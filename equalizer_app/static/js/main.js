@@ -11,11 +11,8 @@ function downloadBlob(data, filename, type="application/octet-stream"){
 }
 
 // ---------- DOM bindings ----------
-const btnOpen = firstSel("#btn-open");
 const fileInput = firstSel("#file-hidden");
 const dropZone = firstSel("#drop-zone");
-const btnSaveSettings = firstSel("#btn-save-settings");
-const btnLoadSettings = firstSel("#btn-load-settings");
 const modeSelect = firstSel("#mode-select");
 const btnAIPanel = firstSel("#btn-ai-panel");
 const eqPanel = firstSel("#eq-sliders");
@@ -26,10 +23,12 @@ const inputCanvas = firstSel("#wave-in");
 const outputCanvas = firstSel("#wave-out");
 const inCtx = inputCanvas ? inputCanvas.getContext("2d") : null;
 const outCtx = outputCanvas ? outputCanvas.getContext("2d") : null;
-// REMOVED: btnAddSubBand
+
+// Equalizer Buttons
 const btnClearSubBand = firstSel("#btn-clear-subband");
 const btnSaveScheme = firstSel("#btn-scheme-save");
 const btnLoadScheme = firstSel("#btn-scheme-load");
+
 const audioIn = firstSel("#audio-in");
 const audioOut = firstSel("#audio-out");
 const btnPlayInput = firstSel("#play-input");
@@ -89,7 +88,6 @@ async function apiGet(url){
 }
 
 function bindUpload(){
-  if(btnOpen) btnOpen.addEventListener("click", () => fileInput && fileInput.click());
   if(dropZone){
     dropZone.addEventListener("click", () => fileInput && fileInput.click());
     ["dragenter","dragover"].forEach(ev => dropZone.addEventListener(ev, e => { e.preventDefault(); dropZone.classList.add("drag"); }));
@@ -168,7 +166,8 @@ function drawSpectrum(mags, fmax, canvas, ctx, scale="linear"){
       state.subbands.forEach(sb => {
           const x1 = 30 + (sb.fmin / state.fmax) * drawW;
           const x2 = 30 + (sb.fmax / state.fmax) * drawW;
-          ctx.fillStyle = "rgba(214, 41, 118, 0.50)";
+          // UPDATED: Opacity changed to 30%
+          ctx.fillStyle = "rgba(214, 41, 118, 0.30)";
           ctx.fillRect(x1, 0, x2 - x1, drawH);
           ctx.strokeStyle = "rgba(255, 255, 255, 0.3)";
           ctx.lineWidth = 1;
@@ -177,7 +176,8 @@ function drawSpectrum(mags, fmax, canvas, ctx, scale="linear"){
   }
   if(state.mode==="generic" && state.selecting){
     const x1=Math.min(state.selStartX,state.selEndX), x2=Math.max(state.selStartX,state.selEndX);
-    ctx.fillStyle="rgba(255, 255, 255, 0.2)";
+    // UPDATED: Opacity changed to 30%
+    ctx.fillStyle="rgba(255, 255, 255, 0.30)";
     ctx.fillRect(Math.max(30,x1), 0, x2 - Math.max(30,x1), drawH);
   }
 }
@@ -440,15 +440,46 @@ async function refreshAll(){
 
 // ---------- Standard Init ----------
 function bindSpectrumSelection(){
-  if(!spectrumCanvas) return; const cvs=spectrumCanvas;
-  cvs.addEventListener("mousedown",(e)=>{ if(state.mode!=="generic") return; state.selecting=true; const r=cvs.getBoundingClientRect(); state.selStartX=e.clientX-r.left; state.selEndX=state.selStartX; redrawSpectrum(); });
-  cvs.addEventListener("mousemove",(e)=>{ if(!state.selecting) return; const r=cvs.getBoundingClientRect(); state.selEndX=e.clientX-r.left; redrawSpectrum(); });
+  if(!spectrumCanvas) return;
+  const cvs=spectrumCanvas;
+
+  cvs.addEventListener("mousedown",(e)=>{
+    if(state.mode!=="generic") return;
+    if(!state.signalId) return; // UPDATED: Block selection if no file uploaded
+    state.selecting=true;
+
+    const r=cvs.getBoundingClientRect();
+    // UPDATED: Correct Scale for Drag Start (Fixes Shift Issue)
+    const scaleX = cvs.width / r.width;
+    state.selStartX = (e.clientX - r.left) * scaleX;
+    state.selEndX = state.selStartX;
+    redrawSpectrum();
+  });
+
+  cvs.addEventListener("mousemove",(e)=>{
+    if(!state.selecting) return;
+    const r=cvs.getBoundingClientRect();
+    // UPDATED: Correct Scale for Drag Move
+    const scaleX = cvs.width / r.width;
+    state.selEndX = (e.clientX - r.left) * scaleX;
+    redrawSpectrum();
+  });
+
   window.addEventListener("mouseup", async ()=>{
-    if(!state.selecting) return; state.selecting=false; redrawSpectrum();
+    if(!state.selecting) return;
+    state.selecting=false;
+    redrawSpectrum();
+
     const band=await promptBandFromSelection();
-    if(band){ state.subbands.push(band); renderEqSliders(); await applyEqualizer(); }
+    if(band){
+        state.subbands.push(band);
+        renderEqSliders();
+        redrawSpectrum(); // UPDATED: Refresh immediately
+        await applyEqualizer();
+    }
   });
 }
+
 function redrawSpectrum(){ if(state.spectrumMags) drawSpectrum(state.spectrumMags, state.fmax, spectrumCanvas, spectrumCtx, state.scale); }
 function pxToFreq(x,W,fmax){ const drawW = W - 30; const relX = Math.max(0, x - 30); return (Math.min(1,Math.max(0,relX/drawW)))*fmax; }
 async function promptBandFromSelection(){
@@ -467,7 +498,6 @@ function renderGenericSubbands(){
   if(!eqPanel) return;
   eqPanel.innerHTML="";
 
-  // UPDATED: Logic to disable/enable Clear button
   const btnClear = document.querySelector("#btn-clear-subband");
   if(btnClear) {
       if(state.subbands.length > 0) btnClear.removeAttribute("disabled");
@@ -480,9 +510,19 @@ function renderGenericSubbands(){
     eqPanel.appendChild(row);
   });
   eqPanel.oninput = async (e)=>{ const r=e.target; if(r.tagName==="INPUT"){ const id=r.dataset.id; const sb=state.subbands.find(s=>s.id===id); if(sb){ sb.gain=+r.value; r.parentElement.querySelector(".sb-gain").textContent=`${sb.gain.toFixed(2)}x`; await applyEqualizerDebounced(); }}};
+
   eqPanel.onclick  = async (e)=>{ const b=e.target.closest("button"); if(!b) return; const id=b.dataset.id; const sb=state.subbands.find(s=>s.id===id); if(!sb) return;
-    if(b.dataset.act==="del"){ state.subbands=state.subbands.filter(s=>s.id!==id); renderEqSliders(); await applyEqualizer(); }
-    else { const resp=window.prompt(`Edit [min,max,gain]`, `${sb.fmin}, ${sb.fmax}, ${sb.gain}`); if(!resp) return; const p=resp.split(",").map(s=>+s.trim()); if(p.length<3) return; sb.fmin=Math.min(p[0],p[1]); sb.fmax=Math.max(p[0],p[1]); sb.gain=Math.max(0,Math.min(2,p[2])); renderEqSliders(); await applyEqualizer(); }
+    if(b.dataset.act==="del"){ state.subbands=state.subbands.filter(s=>s.id!==id); renderEqSliders(); redrawSpectrum(); await applyEqualizer(); }
+    else {
+        const resp=window.prompt(`Edit [min,max,gain]`, `${sb.fmin}, ${sb.fmax}, ${sb.gain}`);
+        if(!resp) return;
+        const p=resp.split(",").map(s=>+s.trim());
+        if(p.length<3) return;
+        sb.fmin=Math.min(p[0],p[1]); sb.fmax=Math.max(p[0],p[1]); sb.gain=Math.max(0,Math.min(2,p[2]));
+        renderEqSliders();
+        redrawSpectrum(); // UPDATED: Refresh immediately
+        await applyEqualizer();
+    }
   };
 }
 
@@ -529,14 +569,19 @@ async function refreshOutputs(){
 }
 
 function bindToggles(){
-  if(btnAddSubBand) btnAddSubBand.addEventListener("click", ()=> { if(!state.signalId) return alert("Upload a signal first."); alert("Select an interval on the spectrum by dragging with the mouse."); });
-  if(btnClearSubBand) btnClearSubBand.addEventListener("click", async ()=>{ if(state.mode !== 'generic' || !state.signalId) return; state.subbands = []; renderEqSliders(); await applyEqualizer(); });
+  if(btnClearSubBand) btnClearSubBand.addEventListener("click", async ()=>{
+      if(state.mode !== 'generic' || !state.signalId) return;
+
+      // UPDATED: Optimized Clear (Instant UI Update)
+      state.subbands = [];
+      renderEqSliders(); // Remove sliders instantly
+      redrawSpectrum();  // Clear visual bands instantly
+
+      await applyEqualizer(); // Process audio in background
+  });
   if(modeSelect) modeSelect.addEventListener("change", async e => { if(!state.signalId) { e.target.value = state.mode; return; } state.mode = e.target.value; state.subbands=[]; state.customSliders=[]; renderEqSliders(); await applyEqualizer(); });
 }
 function bindSaveLoad(){
-  if(btnSaveSettings) btnSaveSettings.addEventListener("click", async ()=>{ if(!state.signalId) return alert("Upload a signal first."); const full = { scale:state.scale, showSpectrograms:state.showSpectrograms, ...(state.mode==="generic"?{mode:"generic",subbands:state.subbands}:{mode:state.mode,sliders:state.customSliders}) }; const buf = await apiPost(`/api/save_settings/${state.signalId}/`, full); const j = typeof buf==="object" ? buf : JSON.parse(new TextDecoder().decode(buf)); downloadBlob(new TextEncoder().encode(JSON.stringify(j.data,null,2)), j.filename, "application/json"); });
-  const fileSettingsInput = firstSel("#file-settings");
-  if(fileSettingsInput) fileSettingsInput.addEventListener("change", async (e)=>{ const f = e.target.files?.[0]; if(!f) return; const data = JSON.parse(await f.text()); await apiPost(`/api/load_settings/${state.signalId}/`, data); state.scale=data.scale||"linear"; state.showSpectrograms=!!data.showSpectrograms; state.mode=data.mode||"generic"; state.subbands=data.subbands||[]; state.customSliders=data.sliders||[]; if(modeSelect) modeSelect.value=state.mode; await refreshAll(); });
   if(btnSaveScheme) btnSaveScheme.addEventListener("click", async ()=>{ if(!state.signalId) return alert("Upload a signal first."); const scheme = state.mode==="generic" ? {mode:"generic", subbands:state.subbands} : {mode:state.mode, sliders:state.customSliders}; const buf = await apiPost(`/api/save_scheme/${state.signalId}/`, scheme); const j = typeof buf==="object" ? buf : JSON.parse(new TextDecoder().decode(buf)); downloadBlob(new TextEncoder().encode(JSON.stringify(j.data,null,2)), j.filename, "application/json"); });
   const fileSchemeInput = firstSel("#file-scheme");
   if(fileSchemeInput) fileSchemeInput.addEventListener("change", async (e)=>{ const f = e.target.files?.[0]; if(!f) return; const data = JSON.parse(await f.text()); await apiPost(`/api/load_scheme/${state.signalId}/`, data); state.mode=data.mode||"generic"; state.subbands=data.subbands||[]; state.customSliders=data.sliders||[]; if(modeSelect) modeSelect.value=state.mode; renderEqSliders(); await applyEqualizer(); });

@@ -18,14 +18,7 @@
   <div class="brand">Signal Equalizer</div>
 
   <div class="controls-row">
-    <button id="btn-open">Open Signal</button>
     <input id="file-hidden" type="file" accept=".wav,.npy" style="display:none"/>
-
-    <button id="btn-save-settings">Save Settings</button>
-    <label class="file-btn">
-      <input id="file-settings" type="file" accept=".json" style="display:none"/>
-      <span id="btn-load-settings">Load Settings</span>
-    </label>
 
     <label>Mode:
       <select id="mode-select">
@@ -35,93 +28,11 @@
       </select>
     </label>
 
-    <!-- REMOVED Audiogram Button & Spectrogram Checkbox -->
-
     <button id="btn-ai-panel">AI Models</button>
   </div>
 </header>
 
-{% block content %}
-<section class="uploader">
-  <div id="drop-zone" class="drop">
-    <div class="hint">Drag & drop an audio file here<br>or click to browse</div>
-  </div>
-</section>
-
-<main class="workspace">
-
-  <aside class="left-panel">
-    <div class="panel-title">
-      <span>Equalizer</span>
-      <span id="eq-mode-label"></span>
-    </div>
-
-    <div id="generic-tools" class="tool-row">
-      <button id="btn-add-subband">Add Sub-Band</button>
-      <button id="btn-clear-subband">Clear</button>
-      <button id="btn-scheme-save">Save scheme</button>
-      <label class="file-btn">
-        <input id="file-scheme" type="file" accept=".json" style="display:none"/>
-        <span id="btn-scheme-load">Load scheme</span>
-      </label>
-    </div>
-
-    <div id="eq-sliders" class="sliders"></div>
-  </aside>
-
-  <section class="center-panel">
-    <div class="panel-title">Spectrum (click & drag in Generic mode to create band)</div>
-    <canvas id="fft-canvas" width="1200" height="260"></canvas>
-  </section>
-
-  <aside id="ai-panel" class="right-panel hidden">
-    <div class="panel-title">AI Models</div>
-    <div class="tool-row">
-      <label>Model:
-        <select id="ai-model">
-          <option value="demucs">Demucs (music)</option>
-          <option value="voices">VoiceSeparator</option>
-        </select>
-      </label>
-      <button id="btn-run-ai">Run AI on input</button>
-    </div>
-    <div id="ai-sliders" class="sliders"></div>
-    <div id="ai-outputs" class="ai-outputs"></div>
-  </aside>
-
-</main>
-
-<section class="bottom-panels">
-  <div class="twocol">
-    <div>
-      <div class="panel-title">Input</div>
-      <audio id="audio-in" controls></audio>
-      <canvas id="wave-in" width="1200" height="160"></canvas>
-      <canvas id="spec-in" width="1200" height="180"></canvas>
-    </div>
-    <div>
-      <div class="panel-title">Output</div>
-      <audio id="audio-out" controls></audio>
-      <canvas id="wave-out" width="1200" height="160"></canvas>
-      <canvas id="spec-out" width="1200" height="180"></canvas>
-    </div>
-  </div>
-  <div class="sync-controls">
-    <button id="play-input">Play Input</button>
-    <button id="play-output">Play Output</button>
-    <button id="sync-reset">Reset View</button>
-    <span id="status"></span>
-  </div>
-</section>
-{% endblock %}
-
-{% comment %} <footer class="statusbar" id="statusbar">
-  File: <span id="sb-file">—</span> |
-  Fs: <span id="sb-fs">—</span> |
-  Length: <span id="sb-len">—</span> s |
-  Cursor: <span id="sb-cur">0.00</span> s |
-  Sync: <span id="sb-sync">OK</span>
-</footer> {% endcomment %}
+{% block content %}{% endblock %}
 
 <script src="{% static 'js/main.js' %}"></script>
 </body>
