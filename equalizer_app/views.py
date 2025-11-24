@@ -1,19 +1,18 @@
 # equalizer_app/views.py
 import io, json, os, uuid, wave, math, struct, base64
-from dataclasses import dataclass
 from typing import List, Dict
 from django.http import HttpResponse, JsonResponse, HttpResponseBadRequest
 from django.views.decorators.csrf import csrf_exempt
 from django.conf import settings
 
-import numpy as np  # allowed for arrays, not for fft/spectrogram
+import numpy as np
+# Importing the custom FFT algorithms
 from .utils.fft import fft_radix2, ifft_radix2, stft_spectrogram
 
 MEDIA_ROOT = getattr(settings, "MEDIA_ROOT", os.path.join(settings.BASE_DIR, "media"))
 DATA_DIR = os.path.join(MEDIA_ROOT, "signals")
 os.makedirs(DATA_DIR, exist_ok=True)
 
-# In-memory light registry (you can move to DB if needed)
 REG: Dict[str, dict] = {}
 
 
@@ -26,9 +25,8 @@ def _write_wav(path, sr, x: np.ndarray):
     x = np.clip(x, -1.0, 1.0)
     with wave.open(path, "wb") as wf:
         wf.setnchannels(1)
-        wf.setsampwidth(2)  # 16-bit
+        wf.setsampwidth(2)
         wf.setframerate(int(sr))
-        # PCM 16
         frames = (x * 32767.0).astype(np.int16).tobytes()
         wf.writeframes(frames)
 
@@ -60,10 +58,8 @@ def _next_pow2(n):
 
 def _make_output_for_signal(sid):
     meta = REG[sid]
-    in_x = meta["input_x"]
+    out_x = meta.get("output_x", meta["input_x"].copy())
     sr = meta["sr"]
-    # if no settings yet, output == input
-    out_x = meta.get("output_x", in_x.copy())
     out_path = os.path.join(DATA_DIR, sid, "output.wav")
     _write_wav(out_path, sr, out_x)
     REG[sid]["output_x"] = out_x
@@ -72,30 +68,35 @@ def _make_output_for_signal(sid):
 
 @csrf_exempt
 def upload_signal(request):
-    if request.method != "POST":
-        return HttpResponseBadRequest("POST only")
+    if request.method != "POST": return HttpResponseBadRequest("POST only")
     f = request.FILES.get("signal")
-    if not f:
-        return HttpResponseBadRequest("No file 'signal'")
+    if not f: return HttpResponseBadRequest("No file 'signal'")
+
     sid = uuid.uuid4().hex[:12]
     sig_dir = os.path.join(DATA_DIR, sid)
     os.makedirs(sig_dir, exist_ok=True)
 
-    # store original
     orig_path = os.path.join(sig_dir, f.name)
     with open(orig_path, "wb") as fp:
         for chunk in f.chunks():
             fp.write(chunk)
 
-    # load wav -> sr, x
     with open(orig_path, "rb") as fp:
         sr, x = _read_wav(fp)
+
+    x_float = x.astype(np.float32)
+    n = x_float.size
+    n2 = _next_pow2(n)
+    xz = np.zeros(n2, dtype=np.float32)
+    xz[:n] = x_float
+    input_X_complex = fft_radix2(xz)
 
     REG[sid] = {
         "file_name": f.name,
         "sr": int(sr),
-        "input_x": x.astype(np.float32),
-        "output_x": x.astype(np.float32).copy(),
+        "input_x": x_float,
+        "input_X_complex": input_X_complex,
+        "output_x": x_float.copy(),
         "mode": "generic",
         "subbands": [],
         "custom_sliders": [],
@@ -104,66 +105,35 @@ def upload_signal(request):
     }
     _make_output_for_signal(sid)
 
-    resp = {
-        "signal_id": sid,
-        "file_name": f.name,
-        "sr": int(sr),
-        "n": int(x.size),
-        "duration": float(x.size / sr),
-    }
-    return _resp_json(resp)
+    return _resp_json({
+        "signal_id": sid, "file_name": f.name, "sr": int(sr),
+        "n": int(x.size), "duration": float(x.size / sr),
+    })
 
 
 def summary(request, sid):
     meta = REG.get(sid)
     if not meta: return HttpResponseBadRequest("Invalid id")
-    resp = {
-        "file_name": meta["file_name"],
-        "sr": meta["sr"],
+    return _resp_json({
+        "file_name": meta["file_name"], "sr": meta["sr"],
         "duration": float(meta["input_x"].size / meta["sr"]),
-    }
-    return _resp_json(resp)
+    })
 
 
-# ---
-# --- THIS FUNCTION IS NOW OPTIMIZED ---
-# ---
 def _compute_spectrum(x: np.ndarray, sr: int, scale: str):
-    """
-    Calculates the *average* magnitude spectrum.
-    This is much faster and smoother than an FFT of the whole file.
-    """
-    # S is a 2D array: (frequency_bins, time_frames)
     S = stft_spectrogram(x, sr)
-
-    if S.size == 0:
-        # Handle very short files that produce no frames
-        nfft = 1
-        while nfft < int(sr * 25 / 1000): nfft <<= 1  # Recreate default nfft
-        return [0.0] * (nfft // 2), sr / 2.0
-
-    # The "average spectrum" is the mean across all time frames
+    if S.size == 0: return [0.0], sr / 2.0
     mag = np.mean(S, axis=1)
-
-    # Normalize
     mag_max = mag.max()
-    if mag_max > 1e-12:
-        mag = mag / mag_max
-
-    fmax = sr / 2.0
-
-    if scale == "audiogram":
-        # Emphasize speech band for visualization
-        mag = np.power(mag, 0.7)
-
-    return mag.tolist(), float(fmax)
+    if mag_max > 1e-12: mag = mag / mag_max
+    if scale == "audiogram": mag = np.power(mag, 0.7)
+    return mag.tolist(), float(sr / 2.0)
 
 
 def spectrum(request, sid):
     meta = REG.get(sid)
     if not meta: return HttpResponseBadRequest("Invalid id")
     scale = request.GET.get("scale", "linear")
-    # Get output_x, fall back to input_x
     x_data = meta.get("output_x", meta["input_x"])
     mags, fmax = _compute_spectrum(x_data, meta["sr"], scale)
     return _resp_json({"mags": mags, "fmax": fmax})
@@ -178,36 +148,75 @@ def wave_previews(request, sid):
 
 
 def spectrograms(request, sid):
+    """
+    Generates efficient Log-Scaled Spectrograms
+    """
     meta = REG.get(sid)
     if not meta: return HttpResponseBadRequest("Invalid id")
     sr = meta["sr"]
+
     x_in = meta["input_x"]
     x_out = meta.get("output_x", x_in)
+
+    # Get Linear STFT
     S_in = stft_spectrogram(x_in, sr)
     S_out = stft_spectrogram(x_out, sr)
 
-    # convert to PNG base64 (simple grayscale)
-    import PIL.Image as Image  # Pillow is okay for rendering images; not part of FFT
-    def to_png_b64(S):
-        # normalize
-        Sm = S - S.min()
-        s_max = Sm.max()
-        if s_max < 1e-12:
-            Sm = np.zeros_like(Sm)
-        else:
-            Sm = Sm / s_max
+    import PIL.Image as Image
 
-        img = (Sm * 255).astype(np.uint8)
-        im = Image.fromarray(img[::-1, :], mode="L")
+    def process_and_encode(S):
+        # 1. Log Magnitude for visibility (dB-like)
+        # Using log1p to handle zeros gracefully
+        S_log = np.log1p(S * 1000)
+
+        # 2. Normalize [0..1]
+        s_min, s_max = S_log.min(), S_log.max()
+        if s_max - s_min > 1e-12:
+            S_norm = (S_log - s_min) / (s_max - s_min)
+        else:
+            S_norm = np.zeros_like(S_log)
+
+        # 3. Convert to [0..255] uint8
+        img_data = (S_norm * 255).astype(np.uint8)
+
+        # 4. Flip Y so 0Hz is at bottom
+        img_data = img_data[::-1, :]
+
+        # 5. Fast Vectorized Log-Frequency Warping
+        h, w = img_data.shape
+        if h > 1:
+            # Create a mapping from dest_row -> src_row based on log scale
+            # We want to stretch low freqs (bottom/high-index in flipped array)
+            # and compress high freqs (top/low-index).
+
+            # Normalized 0..1 coordinates
+            y_lin = np.linspace(0, 1, h)
+
+            # Apply power law for visual log-like effect (Audiogram style)
+            # 0.25 power stretches the bottom significantly
+            y_log = np.power(y_lin, 0.25)
+
+            # Map to integer indices [0, h-1]
+            src_indices = (y_log * (h - 1)).astype(int)
+
+            # Clip to ensure bounds
+            src_indices = np.clip(src_indices, 0, h - 1)
+
+            # Apply warping using advanced indexing
+            img_data = img_data[src_indices, :]
+
+        im = Image.fromarray(img_data, mode="L")
         buf = io.BytesIO()
         im.save(buf, format="PNG")
         return base64.b64encode(buf.getvalue()).decode("ascii")
 
-    return _resp_json({"in_png": to_png_b64(S_in), "out_png": to_png_b64(S_out)})
+    return _resp_json({
+        "in_png": process_and_encode(S_in),
+        "out_png": process_and_encode(S_out)
+    })
 
 
 def custom_conf(request, sid):
-    """Return predefined sliders for the chosen mode."""
     mode = request.GET.get("mode", "generic").lower()
     sliders = []
     if mode == "musical instruments":
@@ -242,17 +251,12 @@ def equalize(request, sid):
     body = json.loads(request.body.decode("utf-8"))
     mode = body.get("mode", "generic")
     sr = meta["sr"]
-    x = meta["input_x"].astype(np.float32)
 
-    # FFT-based scaling in frequency domain (manual FFT)
-    n = x.size
-    n2 = _next_pow2(n)
-    xz = np.zeros(n2, dtype=np.float32);
-    xz[:n] = x
-    X = fft_radix2(xz)
+    X = meta["input_X_complex"].copy()
+    n = meta["input_x"].size
+    n2 = X.size
 
     def apply_windows(windows, gain):
-        # windows: list of {fmin,fmax}
         for w in windows:
             fmin = max(0.0, float(w["fmin"]))
             fmax = max(0.0, float(w["fmax"]))
@@ -261,25 +265,18 @@ def equalize(request, sid):
             kmax = int(fmax / (sr / n2))
             kmin = max(0, min(kmin, n2 // 2 - 1))
             kmax = max(0, min(kmax, n2 // 2 - 1))
-            if kmax < kmin:
-                continue
-            # mirror bins for Hermitian symmetry (real signal)
+            if kmax < kmin: continue
             X[kmin:kmax + 1] *= gain
-            if kmin > 0:
-                X[-(kmax + 1):-(kmin)].__imul__(gain)
+            if kmin > 0: X[-(kmax + 1):-(kmin)].__imul__(gain)
 
     if mode == "generic":
         subs = body.get("subbands", [])
         REG[sid]["subbands"] = subs
-        for sb in subs:
-            apply_windows([{"fmin": sb["fmin"], "fmax": sb["fmax"]}], float(sb["gain"]))
+        for sb in subs: apply_windows([{"fmin": sb["fmin"], "fmax": sb["fmax"]}], float(sb["gain"]))
     else:
         sliders = body.get("sliders", [])
         REG[sid]["custom_sliders"] = sliders
-        for s in sliders:
-            g = float(s.get("gain", 1.0))
-            wins = s.get("windows", [])
-            apply_windows(wins, g)
+        for s in sliders: apply_windows(s.get("windows", []), float(s.get("gain", 1.0)))
 
     xr = ifft_radix2(X).real[:n].astype(np.float32)
     REG[sid]["output_x"] = xr
@@ -289,82 +286,46 @@ def equalize(request, sid):
 
 @csrf_exempt
 def save_scheme(request, sid):
-    meta = REG.get(sid)
-    if not meta: return HttpResponseBadRequest("Invalid id")
     body = json.loads(request.body.decode("utf-8"))
-    name = f"scheme_{sid}.json"
-    return _resp_json({"filename": name, "data": body})
+    return _resp_json({"filename": f"scheme_{sid}.json", "data": body})
 
 
 @csrf_exempt
 def load_scheme(request, sid):
-    meta = REG.get(sid)
-    if not meta: return HttpResponseBadRequest("Invalid id")
     body = json.loads(request.body.decode("utf-8"))
-    if body.get("mode", "generic") == "generic":
-        REG[sid]["mode"] = "generic"
-        REG[sid]["subbands"] = body.get("subbands", [])
-    else:
-        REG[sid]["mode"] = body.get("mode")
-        REG[sid]["custom_sliders"] = body.get("sliders", [])
+    REG[sid].update({"mode": body.get("mode", "generic"), "subbands": body.get("subbands", []),
+                     "custom_sliders": body.get("sliders", [])})
     return _resp_json({"ok": True})
 
 
 @csrf_exempt
 def save_settings(request, sid):
-    meta = REG.get(sid)
-    if not meta: return HttpResponseBadRequest("Invalid id")
     body = json.loads(request.body.decode("utf-8"))
-    name = f"settings_{sid}.json"
-    return _resp_json({"filename": name, "data": body})
+    return _resp_json({"filename": f"settings_{sid}.json", "data": body})
 
 
 @csrf_exempt
 def load_settings(request, sid):
-    meta = REG.get(sid)
-    if not meta: return HttpResponseBadRequest("Invalid id")
     body = json.loads(request.body.decode("utf-8"))
-    REG[sid]["scale"] = body.get("scale", "linear")
-    REG[sid]["show_spec"] = bool(body.get("showSpectrograms", True))
-    if body.get("mode", "generic") == "generic":
-        REG[sid]["mode"] = "generic"
-        REG[sid]["subbands"] = body.get("subbands", [])
-    else:
-        REG[sid]["mode"] = body.get("mode")
-        REG[sid]["custom_sliders"] = body.get("sliders", [])
+    REG[sid].update({"scale": body.get("scale", "linear"), "show_spec": True, "mode": body.get("mode", "generic"),
+                     "subbands": body.get("subbands", []), "custom_sliders": body.get("sliders", [])})
     return _resp_json({"ok": True})
 
 
 def audio_input(request, sid):
-    meta = REG.get(sid)
-    if not meta: return HttpResponseBadRequest("Invalid id")
-    sr = meta["sr"];
-    x = meta["input_x"]
-    buf = io.BytesIO()
-    _write_wav(buf, sr, x)
+    meta = REG[sid]
+    buf = io.BytesIO();
+    _write_wav(buf, meta["sr"], meta["input_x"])
     return HttpResponse(buf.getvalue(), content_type="audio/wav")
 
 
 def audio_output(request, sid):
-    meta = REG.get(sid)
-    if not meta: return HttpResponseBadRequest("Invalid id")
-    sr = meta["sr"];
-    x = meta.get("output_x", meta["input_x"])
-    buf = io.BytesIO()
-    _write_wav(buf, sr, x)
+    meta = REG[sid]
+    buf = io.BytesIO();
+    _write_wav(buf, meta["sr"], meta.get("output_x", meta["input_x"]))
     return HttpResponse(buf.getvalue(), content_type="audio/wav")
 
 
 @csrf_exempt
 def ai_run(request, sid):
-    # Placeholder: Return fake stems+sliders; you can hook real models later
-    body = json.loads(request.body.decode("utf-8"))
-    model = body.get("model", "demo")
-    sliders = [
-        {"name": "Stem 1", "gain": 1.0, "windows": [{"fmin": 100, "fmax": 1000}]},
-        {"name": "Stem 2", "gain": 1.0, "windows": [{"fmin": 1000, "fmax": 4000}]},
-        {"name": "Stem 3", "gain": 1.0, "windows": [{"fmin": 4000, "fmax": 8000}]},
-        {"name": "Stem 4", "gain": 1.0, "windows": [{"fmin": 40, "fmax": 120}]},
-    ]
-    stems = [{"name": s["name"], "url": f"/api/audio/{sid}/output.wav"} for s in sliders]
-    return _resp_json({"model": model, "sliders": sliders, "stems": stems})
+    return _resp_json({"model": "demo", "sliders": [], "stems": []})

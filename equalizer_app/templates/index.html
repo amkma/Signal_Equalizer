@@ -4,7 +4,8 @@
 {% block content %}
 
 <section class="uploader">
-  <div id="drop-zone" class="drop"> <div class="hint">Drag & drop an audio file here<br>or click to browse</div>
+  <div id="drop-zone" class="drop">
+    <div class="hint">Drag & drop an audio file here<br>or click to browse</div>
   </div>
 </section>
 
@@ -32,9 +33,7 @@
   <section class="center-panel">
     <div class="panel-title">Spectrum (click & drag in Generic mode to create band)</div>
     <canvas id="fft-canvas" width="1200" height="260"></canvas>
-
     <div id="spectrum-loader" class="loader-bar hidden"></div>
-
   </section>
 
   <aside id="ai-panel" class="right-panel hidden">
@@ -55,24 +54,48 @@
 </main>
 
 <section class="bottom-panels">
+
+  <!-- WAVEFORMS -->
   <div class="twocol">
+    <div class="panel">
+      <div class="panel-title">Input Signal</div>
+      <audio id="audio-in" controls style="width:100%; margin-bottom:10px;"></audio>
+      <canvas id="wave-in" width="800" height="120"></canvas>
+    </div>
 
     <div class="panel">
-      <div class="panel-title">Input</div>
-      <audio id="audio-in" controls></audio> <canvas id="wave-in" width="1200" height="160"></canvas> <canvas id="spec-in" width="1200" height="180"></canvas> </div>
-
-    <div class="panel">
-      <div class="panel-title">Output</div>
-      <audio id="audio-out" controls></audio> <canvas id="wave-out" width="1200" height="160"></canvas> <canvas id="spec-out" width="1200" height="180"></canvas> </div>
-
+      <div class="panel-title">Output Signal</div>
+      <audio id="audio-out" controls style="width:100%; margin-bottom:10px;"></audio>
+      <canvas id="wave-out" width="800" height="120"></canvas>
+    </div>
   </div>
 
-  <div class="sync-controls panel">
+  <div class="sync-controls panel" style="margin-top: 15px;">
     <button id="play-input">Play Input</button>
     <button id="play-output">Play Output</button>
     <button id="sync-reset">Reset View</button>
     <span id="status"></span>
   </div>
+
+  <!-- SPECTROGRAMS (Clean, No Controls) -->
+  <div class="twocol" style="margin-top: 20px;">
+    <div class="spectrogram-container panel">
+      <div class="panel-title">Input Spectrogram</div>
+      <div class="spec-wrapper">
+        <canvas id="spec-in-canvas" width="540" height="250"></canvas>
+        <canvas id="spec-in-axis" width="635" height="290"></canvas>
+      </div>
+    </div>
+
+    <div class="spectrogram-container panel">
+      <div class="panel-title">Output Spectrogram</div>
+      <div class="spec-wrapper">
+        <canvas id="spec-out-canvas" width="540" height="250"></canvas>
+        <canvas id="spec-out-axis" width="635" height="290"></canvas>
+      </div>
+    </div>
+  </div>
+
 </section>
 
 {% endblock %}
