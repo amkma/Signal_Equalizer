@@ -27,7 +27,11 @@ const outCtx = outputCanvas ? outputCanvas.getContext("2d") : null;
 // Equalizer Buttons
 const btnClearSubBand = firstSel("#btn-clear-subband");
 const btnSaveScheme = firstSel("#btn-scheme-save");
-const btnLoadScheme = firstSel("#btn-scheme-load");
+const btnLoadScheme = firstSel("#btn-scheme-load"); // This is the span
+const fileSchemeInput = firstSel("#file-scheme");   // This is the input
+
+// AI Button
+const btnRunAI = firstSel("#btn-run-ai");
 
 const audioIn = firstSel("#audio-in");
 const audioOut = firstSel("#audio-out");
@@ -87,6 +91,37 @@ async function apiGet(url){
   return ct.includes("application/json") ? r.json() : r.arrayBuffer();
 }
 
+// Enable/Disable UI controls
+function setGlobalState(enabled) {
+    const disabled = !enabled;
+
+    // 1. Top Bar Controls - UPDATED: Kept enabled as requested
+    // modeSelect.disabled = disabled; // Commented out to keep enabled
+    // btnAIPanel.disabled = disabled; // Commented out to keep enabled
+
+    // 2. Equalizer Buttons
+    if(btnSaveScheme) btnSaveScheme.disabled = disabled;
+
+    if(fileSchemeInput) fileSchemeInput.disabled = disabled;
+    const loadLabel = document.querySelector(".file-btn");
+    if(loadLabel) {
+        if(disabled) loadLabel.classList.add("disabled");
+        else loadLabel.classList.remove("disabled");
+    }
+
+    if(disabled && btnClearSubBand) {
+        btnClearSubBand.disabled = true;
+    }
+
+    // 3. AI Panel Buttons
+    if(btnRunAI) btnRunAI.disabled = disabled;
+
+    // 4. Playback Controls
+    if(btnPlayInput) btnPlayInput.disabled = disabled;
+    if(btnPlayOutput) btnPlayOutput.disabled = disabled;
+    if(btnSyncReset) btnSyncReset.disabled = disabled;
+}
+
 function bindUpload(){
   if(dropZone){
     dropZone.addEventListener("click", () => fileInput && fileInput.click());
@@ -105,7 +140,9 @@ async function doUploadFile(file){
     const res = await apiPost("/api/upload/", fd, false);
     const j = typeof res === "object" ? res : JSON.parse(new TextDecoder().decode(res));
     state.signalId = j.signal_id; state.sr = j.sr; state.duration = j.duration; state.nSamples = j.n;
+
     setStatus(`Loaded ${j.file_name} — sr=${j.sr}Hz, len=${j.duration.toFixed(2)}s`);
+    setGlobalState(true);
     await refreshAll();
   }catch(err){
     console.error(err);
@@ -166,8 +203,8 @@ function drawSpectrum(mags, fmax, canvas, ctx, scale="linear"){
       state.subbands.forEach(sb => {
           const x1 = 30 + (sb.fmin / state.fmax) * drawW;
           const x2 = 30 + (sb.fmax / state.fmax) * drawW;
-          // UPDATED: Opacity changed to 30%
-          ctx.fillStyle = "rgba(214, 41, 118, 0.30)";
+          // UPDATED: Opacity 20%
+          ctx.fillStyle = "rgba(214, 41, 118, 0.20)";
           ctx.fillRect(x1, 0, x2 - x1, drawH);
           ctx.strokeStyle = "rgba(255, 255, 255, 0.3)";
           ctx.lineWidth = 1;
@@ -176,13 +213,12 @@ function drawSpectrum(mags, fmax, canvas, ctx, scale="linear"){
   }
   if(state.mode==="generic" && state.selecting){
     const x1=Math.min(state.selStartX,state.selEndX), x2=Math.max(state.selStartX,state.selEndX);
-    // UPDATED: Opacity changed to 30%
-    ctx.fillStyle="rgba(255, 255, 255, 0.30)";
+    // UPDATED: Opacity 20%
+    ctx.fillStyle="rgba(255, 255, 255, 0.20)";
     ctx.fillRect(Math.max(30,x1), 0, x2 - Math.max(30,x1), drawH);
   }
 }
 
-// Draw Wave Function
 function drawWavePreview(canvas, ctx, samples, playheadRatio = null){
   if(!canvas||!ctx||!Array.isArray(samples)) return;
 
@@ -193,7 +229,6 @@ function drawWavePreview(canvas, ctx, samples, playheadRatio = null){
   const W = canvas.width;
   const H = canvas.height;
 
-  // Margins matching Spectrogram
   const marginL = 75;
   const marginR = 20;
   const drawW = W - marginL - marginR;
@@ -215,20 +250,15 @@ function drawWavePreview(canvas, ctx, samples, playheadRatio = null){
   ctx.font = "10px monospace";
   ctx.textAlign = "center";
 
-  // X-Axis Line
   ctx.beginPath(); ctx.moveTo(0, drawH); ctx.lineTo(W, drawH); ctx.stroke();
-
-  // Y-Axis Line
   ctx.beginPath(); ctx.moveTo(marginL, 0); ctx.lineTo(marginL, H); ctx.stroke();
 
-  // Draw X Labels
   xLabels.forEach(lbl => {
       const x = marginL + (lbl.pos * drawW);
       ctx.beginPath(); ctx.moveTo(x, drawH); ctx.lineTo(x, drawH + 5); ctx.stroke();
       ctx.fillText(lbl.text, x, drawH + 15);
   });
 
-  // Draw Y Labels
   ctx.textAlign = "right";
   const yLabels = [{pos:0,t:"-1"}, {pos:0.5,t:"0"}, {pos:1,t:"1"}];
   yLabels.forEach(lbl => {
@@ -240,7 +270,6 @@ function drawWavePreview(canvas, ctx, samples, playheadRatio = null){
   ctx.fillText("Time", W - 10, drawH + 15);
   ctx.fillText("Amp", marginL - 8, 10);
 
-  // Waveform
   ctx.strokeStyle = "#a8a8a8";
   ctx.lineWidth = 1;
   ctx.beginPath();
@@ -254,7 +283,6 @@ function drawWavePreview(canvas, ctx, samples, playheadRatio = null){
   }
   ctx.stroke();
 
-  // Playhead Pointer
   if (playheadRatio !== null && playheadRatio >= 0 && playheadRatio <= 1) {
       const cursorX = marginL + (playheadRatio * drawW);
       ctx.strokeStyle = "#ff0000";
@@ -271,7 +299,6 @@ function drawWavePreview(canvas, ctx, samples, playheadRatio = null){
   }
 }
 
-// --- Spectrogram Drawing (Dark Mode + Red Theme) ---
 function drawSpectrogramVisuals(canvas, axisCanvas, b64Data, isInput=true) {
     const ctx = canvas.getContext("2d");
     const axisCtx = axisCanvas.getContext("2d");
@@ -293,20 +320,14 @@ function drawSpectrogramVisuals(canvas, axisCanvas, b64Data, isInput=true) {
             const n = (t - s*a)/s;
             const c1 = arr[Math.min(a, i)];
             const c2 = arr[Math.min(a+1, i)];
-            return [
-                c1[0] + n*(c2[0]-c1[0]),
-                c1[1] + n*(c2[1]-c1[1]),
-                c1[2] + n*(c2[2]-c1[2])
-            ];
+            return [c1[0] + n*(c2[0]-c1[0]), c1[1] + n*(c2[1]-c1[1]), c1[2] + n*(c2[2]-c1[2])];
         };
 
         for(let i=0; i<data.length; i+=4) {
             const val = data[i];
             const norm = val / 255;
             const rgb = interpolateColor(norm, redPalette);
-            data[i] = rgb[0];
-            data[i+1] = rgb[1];
-            data[i+2] = rgb[2];
+            data[i] = rgb[0]; data[i+1] = rgb[1]; data[i+2] = rgb[2];
         }
 
         createImageBitmap(imageData).then(bitmap => {
@@ -317,7 +338,6 @@ function drawSpectrogramVisuals(canvas, axisCanvas, b64Data, isInput=true) {
     };
     img.src = `data:image/png;base64,${b64Data}`;
 
-    // Axes
     axisCtx.clearRect(0,0,AxisW,AxisH);
     const pLeft = 75, pTop = 20;
     const graphW = 540, graphH = 250;
@@ -388,7 +408,7 @@ function drawSpecWithCursor(ctx, bitmap, width, height, playheadRatio) {
 
 async function refreshSpectrograms() {
     if(!state.signalId) return;
-    const specs = await apiGet(`/api/spectrograms/${state.signalId}/?scale_type=logarithmic`);
+    const specs = await apiGet(`/api/spectrograms/${state.signalId}/?scale_type=logarithmic&t=${Date.now()}`);
     const jSpecs = typeof specs === "object" ? specs : JSON.parse(new TextDecoder().decode(specs));
     state.rawSpecIn = jSpecs.in_png;
     state.rawSpecOut = jSpecs.out_png;
@@ -400,15 +420,38 @@ function renderSpectrograms() {
     if(state.rawSpecOut) drawSpectrogramVisuals(specOutCanvas, specOutAxis, state.rawSpecOut, false);
 }
 
-// ---------- Main Refresh ----------
+async function refreshOutputs(){
+  if(!state.signalId) return;
+  if(spectrumLoader) spectrumLoader.classList.remove("hidden");
+
+  audioOut.src = `/api/audio/${state.signalId}/output.wav?t=${Date.now()}`;
+
+  const spec = await apiGet(`/api/spectrum/${state.signalId}/?scale=${state.scale}&t=${Date.now()}`);
+  const jSpec = typeof spec  === "object" ? spec  : JSON.parse(new TextDecoder().decode(spec));
+  state.fmax = jSpec.fmax; state.spectrumMags = jSpec.mags;
+  drawSpectrum(jSpec.mags, jSpec.fmax, spectrumCanvas, spectrumCtx, state.scale);
+
+  const waves = await apiGet(`/api/wave_previews/${state.signalId}/?t=${Date.now()}`);
+  const jWaves = typeof waves === "object" ? waves : JSON.parse(new TextDecoder().decode(waves));
+
+  state.outputSamples = jWaves.output;
+  drawWavePreview(outputCanvas, outCtx, jWaves.output, 0);
+
+  await refreshSpectrograms();
+
+  if(spectrumLoader) spectrumLoader.classList.add("hidden");
+}
+
 async function refreshAll(){
   if(!state.signalId) return;
   if(spectrumLoader) spectrumLoader.classList.remove("hidden");
 
-  audioIn.src = `/api/audio/${state.signalId}/input.wav`;
-  audioOut.src = `/api/audio/${state.signalId}/output.wav`;
+  const ts = Date.now();
 
-  const meta = await apiGet(`/api/summary/${state.signalId}/`);
+  audioIn.src = `/api/audio/${state.signalId}/input.wav?t=${ts}`;
+  audioOut.src = `/api/audio/${state.signalId}/output.wav?t=${ts}`;
+
+  const meta = await apiGet(`/api/summary/${state.signalId}/?t=${ts}`);
   if(typeof meta === "object"){
     const sb = $("#sb-file"), fs=$("#sb-fs"), ln=$("#sb-len");
     if(sb) sb.textContent = meta.file_name || "—";
@@ -416,14 +459,14 @@ async function refreshAll(){
     if(ln) ln.textContent = (meta.duration ?? 0).toFixed(2);
   }
 
-  const spec = await apiGet(`/api/spectrum/${state.signalId}/?scale=${state.scale}`);
+  const spec = await apiGet(`/api/spectrum/${state.signalId}/?scale=${state.scale}&t=${ts}`);
   const jSpec = typeof spec  === "object" ? spec  : JSON.parse(new TextDecoder().decode(spec));
 
   state.fmax = jSpec.fmax;
   state.spectrumMags = jSpec.mags;
   drawSpectrum(jSpec.mags, jSpec.fmax, spectrumCanvas, spectrumCtx, state.scale);
 
-  const waves = await apiGet(`/api/wave_previews/${state.signalId}/`);
+  const waves = await apiGet(`/api/wave_previews/${state.signalId}/?t=${ts}`);
   const jWaves = typeof waves === "object" ? waves : JSON.parse(new TextDecoder().decode(waves));
 
   state.inputSamples = jWaves.input;
@@ -445,11 +488,10 @@ function bindSpectrumSelection(){
 
   cvs.addEventListener("mousedown",(e)=>{
     if(state.mode!=="generic") return;
-    if(!state.signalId) return; // UPDATED: Block selection if no file uploaded
+    if(!state.signalId) return;
     state.selecting=true;
 
     const r=cvs.getBoundingClientRect();
-    // UPDATED: Correct Scale for Drag Start (Fixes Shift Issue)
     const scaleX = cvs.width / r.width;
     state.selStartX = (e.clientX - r.left) * scaleX;
     state.selEndX = state.selStartX;
@@ -459,7 +501,6 @@ function bindSpectrumSelection(){
   cvs.addEventListener("mousemove",(e)=>{
     if(!state.selecting) return;
     const r=cvs.getBoundingClientRect();
-    // UPDATED: Correct Scale for Drag Move
     const scaleX = cvs.width / r.width;
     state.selEndX = (e.clientX - r.left) * scaleX;
     redrawSpectrum();
@@ -474,8 +515,8 @@ function bindSpectrumSelection(){
     if(band){
         state.subbands.push(band);
         renderEqSliders();
-        redrawSpectrum(); // UPDATED: Refresh immediately
-        await applyEqualizer();
+        redrawSpectrum();
+        // UPDATED: Do not call applyEqualizer here to prevent loading bar
     }
   });
 }
@@ -500,7 +541,7 @@ function renderGenericSubbands(){
 
   const btnClear = document.querySelector("#btn-clear-subband");
   if(btnClear) {
-      if(state.subbands.length > 0) btnClear.removeAttribute("disabled");
+      if(state.signalId && state.subbands.length > 0) btnClear.removeAttribute("disabled");
       else btnClear.setAttribute("disabled", "true");
   }
 
@@ -520,7 +561,7 @@ function renderGenericSubbands(){
         if(p.length<3) return;
         sb.fmin=Math.min(p[0],p[1]); sb.fmax=Math.max(p[0],p[1]); sb.gain=Math.max(0,Math.min(2,p[2]));
         renderEqSliders();
-        redrawSpectrum(); // UPDATED: Refresh immediately
+        redrawSpectrum();
         await applyEqualizer();
     }
   };
@@ -550,39 +591,24 @@ async function applyEqualizer(){
   try{ if(spectrumLoader) spectrumLoader.classList.remove("hidden"); await apiPost(`/api/equalize/${state.signalId}/`, payload); await refreshOutputs(); }
   catch(err){ console.error(err); setStatus(`Equalize error: ${err.message}`); if(spectrumLoader) spectrumLoader.classList.add("hidden"); }
 }
-async function refreshOutputs(){
-  if(!state.signalId) return;
-  if(spectrumLoader) spectrumLoader.classList.remove("hidden");
-  audioOut.src = `/api/audio/${state.signalId}/output.wav?t=${Date.now()}`;
-  const spec = await apiGet(`/api/spectrum/${state.signalId}/?scale=${state.scale}`);
-  const jSpec = typeof spec  === "object" ? spec  : JSON.parse(new TextDecoder().decode(spec));
-  state.fmax = jSpec.fmax; state.spectrumMags = jSpec.mags;
-  drawSpectrum(jSpec.mags, jSpec.fmax, spectrumCanvas, spectrumCtx, state.scale);
-  const waves = await apiGet(`/api/wave_previews/${state.signalId}/`);
-  const jWaves = typeof waves === "object" ? waves : JSON.parse(new TextDecoder().decode(waves));
-
-  state.outputSamples = jWaves.output;
-  drawWavePreview(outputCanvas, outCtx, jWaves.output, 0);
-
-  await refreshSpectrograms();
-  if(spectrumLoader) spectrumLoader.classList.add("hidden");
-}
 
 function bindToggles(){
   if(btnClearSubBand) btnClearSubBand.addEventListener("click", async ()=>{
       if(state.mode !== 'generic' || !state.signalId) return;
 
-      // UPDATED: Optimized Clear (Instant UI Update)
+      // Instant UI Update
       state.subbands = [];
-      renderEqSliders(); // Remove sliders instantly
-      redrawSpectrum();  // Clear visual bands instantly
+      renderEqSliders();
+      redrawSpectrum();
 
-      await applyEqualizer(); // Process audio in background
+      await applyEqualizer();
   });
   if(modeSelect) modeSelect.addEventListener("change", async e => { if(!state.signalId) { e.target.value = state.mode; return; } state.mode = e.target.value; state.subbands=[]; state.customSliders=[]; renderEqSliders(); await applyEqualizer(); });
 }
 function bindSaveLoad(){
   if(btnSaveScheme) btnSaveScheme.addEventListener("click", async ()=>{ if(!state.signalId) return alert("Upload a signal first."); const scheme = state.mode==="generic" ? {mode:"generic", subbands:state.subbands} : {mode:state.mode, sliders:state.customSliders}; const buf = await apiPost(`/api/save_scheme/${state.signalId}/`, scheme); const j = typeof buf==="object" ? buf : JSON.parse(new TextDecoder().decode(buf)); downloadBlob(new TextEncoder().encode(JSON.stringify(j.data,null,2)), j.filename, "application/json"); });
+
+  if(fileInput) fileInput.addEventListener("change", (e) => { const f = e.target.files?.[0]; if(f) doUploadFile(f); });
   const fileSchemeInput = firstSel("#file-scheme");
   if(fileSchemeInput) fileSchemeInput.addEventListener("change", async (e)=>{ const f = e.target.files?.[0]; if(!f) return; const data = JSON.parse(await f.text()); await apiPost(`/api/load_scheme/${state.signalId}/`, data); state.mode=data.mode||"generic"; state.subbands=data.subbands||[]; state.customSliders=data.sliders||[]; if(modeSelect) modeSelect.value=state.mode; renderEqSliders(); await applyEqualizer(); });
 }
@@ -633,5 +659,13 @@ function bindPlayback(){
   });
 }
 
-function init(){ bindUpload(); bindSpectrumSelection(); bindPlayback(); bindToggles(); bindSaveLoad(); setStatus("Ready."); }
+function init(){
+    bindUpload();
+    bindSpectrumSelection();
+    bindPlayback();
+    bindToggles();
+    bindSaveLoad();
+    setGlobalState(false);
+    setStatus("Ready.");
+}
 document.addEventListener("DOMContentLoaded", init);

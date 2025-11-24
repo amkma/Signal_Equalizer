@@ -2,71 +2,116 @@
 import numpy as np
 import math
 
-def _bit_reverse_indices(n):
-    j = 0
-    for i in range(n):
-        yield j
-        m = n >> 1
-        while m and j & m:
-            j ^= m
-            m >>= 1
-        j |= m
 
 def fft_radix2(x: np.ndarray):
-    """Cooley–Tukey radix-2 DIT FFT. x: real/complex, length power of 2."""
-    n = int(len(x))
-    X = np.array(x, dtype=np.complex64, copy=True)
-    # bit-reversal
-    idx = list(_bit_reverse_indices(n))
-    X[:] = X[idx]
+    """
+    Vectorized Recursive Cooley-Tukey Radix-2 FFT.
+    Optimized for speed using NumPy broadcasting instead of Python loops.
+    Supports 1D arrays (signal) or 2D batches (spectrogram frames).
+    """
+    # Ensure complex type
+    x = np.asarray(x, dtype=np.complex64)
+    n = x.shape[-1]
 
-    m = 2
-    while m <= n:
-        half = m // 2
-        theta = -2.0 * math.pi / m
-        w_m = complex(math.cos(theta), math.sin(theta))
-        for k in range(0, n, m):
-            w = 1+0j
-            for j in range(half):
-                t = w * X[k + j + half]
-                u = X[k + j]
-                X[k + j] = u + t
-                X[k + j + half] = u - t
-                w *= w_m
-        m <<= 1
-    return X
+    # Base case
+    if n <= 1:
+        return x
+
+    # Handle cases where N is not a power of 2 (padding)
+    if n & (n - 1) != 0:
+        target = 1
+        while target < n: target <<= 1
+        pad_width = [(0, 0)] * (x.ndim - 1) + [(0, target - n)]
+        x = np.pad(x, pad_width, mode='constant')
+        n = target
+
+    # Recursive divide (Vectorized)
+    # Instead of looping, we split the array using slicing
+    even = fft_radix2(x[..., ::2])
+    odd = fft_radix2(x[..., 1::2])
+
+    # Vectorized Twiddle factors
+    # factor = exp(-2j * pi * k / N)
+    k = np.arange(n // 2)
+    factor = np.exp(-2j * np.pi * k / n)
+
+    # Reshape factor for broadcasting if input is 2D (e.g. spectrogram frames)
+    if x.ndim > 1:
+        # Reshape to (1, 1, ..., n//2) to broadcast across frames
+        new_shape = [1] * (x.ndim - 1) + [n // 2]
+        factor = factor.reshape(new_shape)
+
+    # Butterfly operation (Vectorized)
+    return np.concatenate([even + factor * odd, even - factor * odd], axis=-1)
+
 
 def ifft_radix2(X: np.ndarray):
-    """Inverse FFT via conjugate trick using our own fft."""
+    """
+    Inverse FFT via conjugate trick using our vectorized fft.
+    x = conj(FFT(conj(X))) / N
+    """
     Xc = np.conjugate(X)
     xc = fft_radix2(Xc)
-    x = np.conjugate(xc) / len(X)
+    x = np.conjugate(xc) / X.shape[-1]
     return x
 
+
 def stft_spectrogram(x: np.ndarray, sr: int, win_ms=25, hop_ms=10):
-    """Return magnitude spectrogram (freq x time) as float array [0..1]."""
+    """
+    High-performance Vectorized STFT spectrogram.
+    Processes all frames in a single batch FFT call.
+    """
+    # 1. Calc parameters
     win = int(sr * win_ms / 1000)
     hop = int(sr * hop_ms / 1000)
     nfft = 1
     while nfft < win:
         nfft <<= 1
 
-    # Hamming window
-    w = 0.54 - 0.46 * np.cos(2*np.pi*np.arange(win)/(win-1))
-    frames = []
-    for start in range(0, len(x) - win, hop):
-        seg = x[start:start+win] * w
-        pad = np.zeros(nfft, dtype=np.float32)
-        pad[:win] = seg
-        X = fft_radix2(pad)
-        mag = np.abs(X[:nfft//2])
-        frames.append(mag)
-    if not frames:
-        return np.zeros((nfft//2, 1), dtype=np.float32)
-    S = np.stack(frames, axis=1).astype(np.float32)
-    # log scale for visibility
-    S = np.log1p(S)
-    # normalize per-whole
-    S -= S.min()
-    S /= (S.max() + 1e-12)
-    return S
+    # 2. Vectorized Framing
+    if len(x) < win:
+        return np.zeros((nfft // 2, 1), dtype=np.float32)
+
+    n_frames = (len(x) - win) // hop + 1
+
+    # Create an index matrix to slice all frames at once (no loops)
+    # shape: (n_frames, win)
+    frame_indices = np.tile(np.arange(win), (n_frames, 1)) + np.arange(n_frames)[:, None] * hop
+
+    try:
+        frames = x[frame_indices]  # Shape: (n_frames, win)
+    except IndexError:
+        # Fallback for edge cases
+        return np.zeros((nfft // 2, 1), dtype=np.float32)
+
+    # 3. Apply Hamming Window (Vectorized)
+    w = 0.54 - 0.46 * np.cos(2 * np.pi * np.arange(win) / (win - 1))
+    frames = frames * w
+
+    # 4. Zero-pad frames to nfft
+    if nfft > win:
+        frames_padded = np.zeros((n_frames, nfft), dtype=np.float32)
+        frames_padded[:, :win] = frames
+    else:
+        frames_padded = frames
+
+    # 5. Batch FFT
+    # Pass the entire 2D matrix to our vectorized FFT
+    # It will process the last axis (time samples) automatically
+    X = fft_radix2(frames_padded)
+
+    # 6. Magnitude & Log Scale
+    # Take first half (Nyquist) and transpose to (freq, time)
+    mag = np.abs(X[:, :nfft // 2]).T
+
+    mag = np.log1p(mag)  # Log scale for visibility
+
+    # Normalize [0..1]
+    m_min = mag.min()
+    m_max = mag.max()
+    if m_max - m_min > 1e-12:
+        mag = (mag - m_min) / (m_max - m_min)
+    else:
+        mag -= m_min
+
+    return mag.astype(np.float32)
