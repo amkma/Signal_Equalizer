@@ -6,8 +6,8 @@ from django.views.decorators.csrf import csrf_exempt
 from django.conf import settings
 
 import numpy as np
-# Importing the custom FFT algorithms
 from .utils.fft import fft_radix2, ifft_radix2, stft_spectrogram
+from .utils.fft_bridge import fft_cpp
 
 MEDIA_ROOT = getattr(settings, "MEDIA_ROOT", os.path.join(settings.BASE_DIR, "media"))
 DATA_DIR = os.path.join(MEDIA_ROOT, "signals")
@@ -22,6 +22,7 @@ def _resp_json(data: dict):
 
 
 def _write_wav(path, sr, x: np.ndarray):
+    x = x.astype(np.float32)
     x = np.clip(x, -1.0, 1.0)
     with wave.open(path, "wb") as wf:
         wf.setnchannels(1)
@@ -38,14 +39,12 @@ def _read_wav(fileobj):
         n = wf.getnframes()
         raw = wf.readframes(n)
     x = np.frombuffer(raw, dtype=np.int16).astype(np.float32) / 32768.0
-    if nchan > 1:
-        x = x.reshape(-1, nchan).mean(axis=1)
+    if nchan > 1: x = x.reshape(-1, nchan).mean(axis=1)
     return sr, x
 
 
 def _downsample_preview(x: np.ndarray, target=2000):
-    if x.size <= target:
-        return x.tolist()
+    if x.size <= target: return x.tolist()
     idx = np.linspace(0, x.size - 1, target).astype(np.int64)
     return x[idx].tolist()
 
@@ -78,8 +77,7 @@ def upload_signal(request):
 
     orig_path = os.path.join(sig_dir, f.name)
     with open(orig_path, "wb") as fp:
-        for chunk in f.chunks():
-            fp.write(chunk)
+        for chunk in f.chunks(): fp.write(chunk)
 
     with open(orig_path, "rb") as fp:
         sr, x = _read_wav(fp)
@@ -89,7 +87,9 @@ def upload_signal(request):
     n2 = _next_pow2(n)
     xz = np.zeros(n2, dtype=np.float32)
     xz[:n] = x_float
-    input_X_complex = fft_radix2(xz)
+
+    # Default initial FFT using Numpy for speed/compatibility
+    input_X_complex = np.fft.fft(xz)
 
     REG[sid] = {
         "file_name": f.name,
@@ -104,38 +104,70 @@ def upload_signal(request):
         "show_spec": True,
     }
     _make_output_for_signal(sid)
-
-    return _resp_json({
-        "signal_id": sid, "file_name": f.name, "sr": int(sr),
-        "n": int(x.size), "duration": float(x.size / sr),
-    })
+    return _resp_json(
+        {"signal_id": sid, "file_name": f.name, "sr": int(sr), "n": int(x.size), "duration": float(x.size / sr)})
 
 
 def summary(request, sid):
     meta = REG.get(sid)
     if not meta: return HttpResponseBadRequest("Invalid id")
-    return _resp_json({
-        "file_name": meta["file_name"], "sr": meta["sr"],
-        "duration": float(meta["input_x"].size / meta["sr"]),
-    })
+    return _resp_json(
+        {"file_name": meta["file_name"], "sr": meta["sr"], "duration": float(meta["input_x"].size / meta["sr"])})
 
 
-def _compute_spectrum(x: np.ndarray, sr: int, scale: str):
-    S = stft_spectrogram(x, sr)
-    if S.size == 0: return [0.0], sr / 2.0
-    mag = np.mean(S, axis=1)
-    mag_max = mag.max()
-    if mag_max > 1e-12: mag = mag / mag_max
-    if scale == "audiogram": mag = np.power(mag, 0.7)
-    return mag.tolist(), float(sr / 2.0)
+def _compute_spectrum(x: np.ndarray, sr: int, scale: str, backend: str):
+    # The Highlight Marker Bug:
+    # The frontend 'drawSpectrum' loop chokes on large arrays during drag events.
+    # When backend='cpp', we get ~100k points. When 'numpy', we used STFT avg (~1k points).
+    # We MUST downsample the high-res FFT for visual preview.
+
+    VISUAL_POINTS = 2000  # Safe number for JS Canvas performance
+
+    if backend == 'cpp':
+        n2 = _next_pow2(len(x))
+        xz = np.zeros(n2, dtype=np.float32)
+        xz[:len(x)] = x
+        X = fft_cpp(xz)
+        mag = np.abs(X[:n2 // 2])
+
+        # Normalize
+        if mag.max() > 0: mag /= mag.max()
+
+        # Apply Audiogram Scaling
+        if scale == "audiogram":
+            mag = np.log10(mag + 1e-9)
+            mag = (mag - mag.min()) / (mag.max() - mag.min())
+
+        # DOWNSAMPLE FOR FRONTEND PERFORMANCE
+        if len(mag) > VISUAL_POINTS:
+            # Simple decimation
+            step = len(mag) // VISUAL_POINTS
+            mag = mag[::step]
+
+        return mag.tolist(), float(sr / 2.0)
+
+    else:
+        # Default Python STFT Average (already low res)
+        S = stft_spectrogram(x, sr)
+        if S.size == 0: return [0.0], sr / 2.0
+        mag = np.mean(S, axis=1)
+
+        mag_max = mag.max()
+        if mag_max > 1e-12: mag = mag / mag_max
+
+        if scale == "audiogram":
+            mag = np.power(mag, 0.7)
+
+        return mag.tolist(), float(sr / 2.0)
 
 
 def spectrum(request, sid):
     meta = REG.get(sid)
     if not meta: return HttpResponseBadRequest("Invalid id")
     scale = request.GET.get("scale", "linear")
+    backend = request.GET.get("backend", "numpy")
     x_data = meta.get("output_x", meta["input_x"])
-    mags, fmax = _compute_spectrum(x_data, meta["sr"], scale)
+    mags, fmax = _compute_spectrum(x_data, meta["sr"], scale, backend)
     return _resp_json({"mags": mags, "fmax": fmax})
 
 
@@ -148,9 +180,6 @@ def wave_previews(request, sid):
 
 
 def spectrograms(request, sid):
-    """
-    Generates efficient Log-Scaled Spectrograms
-    """
     meta = REG.get(sid)
     if not meta: return HttpResponseBadRequest("Invalid id")
     sr = meta["sr"]
@@ -158,51 +187,21 @@ def spectrograms(request, sid):
     x_in = meta["input_x"]
     x_out = meta.get("output_x", x_in)
 
-    # Get Linear STFT
     S_in = stft_spectrogram(x_in, sr)
     S_out = stft_spectrogram(x_out, sr)
 
     import PIL.Image as Image
-
     def process_and_encode(S):
-        # 1. Log Magnitude for visibility (dB-like)
-        # Using log1p to handle zeros gracefully
         S_log = np.log1p(S * 1000)
-
-        # 2. Normalize [0..1]
         s_min, s_max = S_log.min(), S_log.max()
-        if s_max - s_min > 1e-12:
-            S_norm = (S_log - s_min) / (s_max - s_min)
-        else:
-            S_norm = np.zeros_like(S_log)
+        S_norm = (S_log - s_min) / (s_max - s_min) if (s_max - s_min > 1e-12) else np.zeros_like(S_log)
+        img_data = (S_norm * 255).astype(np.uint8)[::-1, :]
 
-        # 3. Convert to [0..255] uint8
-        img_data = (S_norm * 255).astype(np.uint8)
-
-        # 4. Flip Y so 0Hz is at bottom
-        img_data = img_data[::-1, :]
-
-        # 5. Fast Vectorized Log-Frequency Warping
         h, w = img_data.shape
         if h > 1:
-            # Create a mapping from dest_row -> src_row based on log scale
-            # We want to stretch low freqs (bottom/high-index in flipped array)
-            # and compress high freqs (top/low-index).
-
-            # Normalized 0..1 coordinates
             y_lin = np.linspace(0, 1, h)
-
-            # Apply power law for visual log-like effect (Audiogram style)
-            # 0.25 power stretches the bottom significantly
             y_log = np.power(y_lin, 0.25)
-
-            # Map to integer indices [0, h-1]
-            src_indices = (y_log * (h - 1)).astype(int)
-
-            # Clip to ensure bounds
-            src_indices = np.clip(src_indices, 0, h - 1)
-
-            # Apply warping using advanced indexing
+            src_indices = np.clip((y_log * (h - 1)).astype(int), 0, h - 1)
             img_data = img_data[src_indices, :]
 
         im = Image.fromarray(img_data, mode="L")
@@ -219,21 +218,22 @@ def spectrograms(request, sid):
 def custom_conf(request, sid):
     mode = request.GET.get("mode", "generic").lower()
     sliders = []
-    if mode == "musical instruments":
+
+    if "animal" in mode:
+        sliders = [
+            {"name": "Dog (Low/Bark)", "gain": 1.0, "windows": [{"fmin": 300, "fmax": 1200}]},
+            {"name": "Cat (Meow)", "gain": 1.0, "windows": [{"fmin": 700, "fmax": 1800}]},
+            {"name": "Bird (High)", "gain": 1.0, "windows": [{"fmin": 2500, "fmax": 8000}]},
+            {"name": "Cow/Horse (Low)", "gain": 1.0, "windows": [{"fmin": 50, "fmax": 400}]}
+        ]
+    elif "music" in mode:
         sliders = [
             {"name": "Piano", "gain": 1.0, "windows": [{"fmin": 150, "fmax": 1200}, {"fmin": 2000, "fmax": 4000}]},
             {"name": "Drums", "gain": 1.0, "windows": [{"fmin": 40, "fmax": 180}]},
             {"name": "Violin", "gain": 1.0, "windows": [{"fmin": 300, "fmax": 3500}]},
             {"name": "Bass", "gain": 1.0, "windows": [{"fmin": 40, "fmax": 200}]},
         ]
-    elif mode == "animal sounds":
-        sliders = [
-            {"name": "Dog", "gain": 1.0, "windows": [{"fmin": 400, "fmax": 2000}]},
-            {"name": "Cat", "gain": 1.0, "windows": [{"fmin": 500, "fmax": 3000}]},
-            {"name": "Horse", "gain": 1.0, "windows": [{"fmin": 100, "fmax": 800}]},
-            {"name": "Bird", "gain": 1.0, "windows": [{"fmin": 2000, "fmax": 7000}]},
-        ]
-    elif mode == "human voices":
+    elif "human" in mode:
         sliders = [
             {"name": "Male", "gain": 1.0, "windows": [{"fmin": 85, "fmax": 180}, {"fmin": 2000, "fmax": 4000}]},
             {"name": "Female", "gain": 1.0, "windows": [{"fmin": 165, "fmax": 255}, {"fmin": 2500, "fmax": 5000}]},
@@ -252,22 +252,26 @@ def equalize(request, sid):
     mode = body.get("mode", "generic")
     sr = meta["sr"]
 
-    X = meta["input_X_complex"].copy()
-    n = meta["input_x"].size
-    n2 = X.size
+    xz = meta["input_x"]
+    n = xz.size
+    n2 = _next_pow2(n)
+
+    padded_x = np.zeros(n2, dtype=np.float32)
+    padded_x[:n] = xz
+
+    try:
+        X = fft_cpp(padded_x)
+    except:
+        X = np.fft.fft(padded_x)
+
+    freqs = np.fft.fftfreq(n2, d=1.0 / sr)
 
     def apply_windows(windows, gain):
         for w in windows:
-            fmin = max(0.0, float(w["fmin"]))
-            fmax = max(0.0, float(w["fmax"]))
+            fmin, fmax = float(w["fmin"]), float(w["fmax"])
             if fmax < fmin: fmin, fmax = fmax, fmin
-            kmin = int(fmin / (sr / n2))
-            kmax = int(fmax / (sr / n2))
-            kmin = max(0, min(kmin, n2 // 2 - 1))
-            kmax = max(0, min(kmax, n2 // 2 - 1))
-            if kmax < kmin: continue
-            X[kmin:kmax + 1] *= gain
-            if kmin > 0: X[-(kmax + 1):-(kmin)].__imul__(gain)
+            mask = (np.abs(freqs) >= fmin) & (np.abs(freqs) <= fmax)
+            X[mask] *= gain
 
     if mode == "generic":
         subs = body.get("subbands", [])
@@ -278,7 +282,8 @@ def equalize(request, sid):
         REG[sid]["custom_sliders"] = sliders
         for s in sliders: apply_windows(s.get("windows", []), float(s.get("gain", 1.0)))
 
-    xr = ifft_radix2(X).real[:n].astype(np.float32)
+    xr = np.fft.ifft(X).real[:n].astype(np.float32)
+
     REG[sid]["output_x"] = xr
     _make_output_for_signal(sid)
     return _resp_json({"ok": True})

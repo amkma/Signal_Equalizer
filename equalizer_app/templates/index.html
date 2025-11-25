@@ -30,8 +30,27 @@
   </aside>
 
   <section class="center-panel">
-    <div class="panel-title">Spectrum (click & drag in Generic mode to create band)</div>
-    <canvas id="fft-canvas" width="1200" height="260"></canvas>
+    <div class="panel-header-row">
+        <div class="header-left">
+            <div class="panel-title-inline">Spectrum Analysis</div>
+            <span class="helper-text">(Click & drag in Generic mode to create band)</span>
+        </div>
+
+        <div class="toggles-container">
+            <label class="toggle-switch disabled">
+                <input type="checkbox" id="toggle-audiogram" disabled>
+                <span class="slider-round"></span>
+                <span class="label-text">Audiogram View</span>
+            </label>
+            <label class="toggle-switch disabled">
+                <input type="checkbox" id="toggle-backend" disabled>
+                <span class="slider-round"></span>
+                <span class="label-text">C++ FFT</span>
+            </label>
+        </div>
+    </div>
+
+    <canvas id="fft-canvas" width="1200" height="320"></canvas>
     <div id="spectrum-loader" class="loader-bar hidden"></div>
   </section>
 
@@ -53,7 +72,6 @@
 </main>
 
 <section class="bottom-panels">
-
   <div class="twocol">
     <div class="panel">
       <div class="panel-title">Input Signal</div>
@@ -72,16 +90,14 @@
     <div class="spectrogram-container panel">
       <div class="panel-title">Input Spectrogram</div>
       <div class="spec-wrapper">
-        <canvas id="spec-in-canvas" width="540" height="250"></canvas>
-        <canvas id="spec-in-axis" width="635" height="290"></canvas>
+        <canvas id="spec-in" width="635" height="260"></canvas>
       </div>
     </div>
 
     <div class="spectrogram-container panel">
       <div class="panel-title">Output Spectrogram</div>
       <div class="spec-wrapper">
-        <canvas id="spec-out-canvas" width="540" height="250"></canvas>
-        <canvas id="spec-out-axis" width="635" height="290"></canvas>
+        <canvas id="spec-out" width="635" height="260"></canvas>
       </div>
     </div>
   </div>
@@ -92,7 +108,6 @@
     <button id="sync-reset">Reset View</button>
     <span id="status"></span>
   </div>
-
 </section>
 
 {% endblock %}
