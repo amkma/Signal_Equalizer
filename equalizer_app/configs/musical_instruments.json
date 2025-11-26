@@ -1,30 +1,30 @@
 [
   {
-    "name": "Piano",
+    "name": "Vocals",
     "gain": 1.0,
     "windows": [
-      {"fmin": 27, "fmax": 4200}
+      {"fmin": 200, "fmax": 3000}
     ]
   },
   {
-    "name": "Drums (Kick/Snare)",
+    "name": "Drums",
     "gain": 1.0,
     "windows": [
-      {"fmin": 20, "fmax": 300}
+      {"fmin": 50, "fmax": 800}
     ]
   },
   {
-    "name": "Violin",
+    "name": "Bass",
     "gain": 1.0,
     "windows": [
-      {"fmin": 200, "fmax": 3500}
+      {"fmin": 20, "fmax": 150}
     ]
   },
   {
-    "name": "Bass Guitar",
+    "name": "Others",
     "gain": 1.0,
     "windows": [
-      {"fmin": 40, "fmax": 400}
+      {"fmin": 300, "fmax": 10000}
     ]
   }
 ]
