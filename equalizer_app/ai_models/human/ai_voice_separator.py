@@ -128,15 +128,15 @@ class AIVoiceSeparator:
         except Exception as e:
             raise RuntimeError(f"Cannot load age classifier: {e}")
         
-        try:
-            from speechbrain.pretrained import EncoderClassifier
-            self.language_classifier = EncoderClassifier.from_hparams(
-                source="speechbrain/lang-id-voxlingua107-ecapa",
-                savedir=str(self.models_dir / "lang-id-voxlingua107-ecapa"),
-                run_opts={"device": "cuda" if torch.cuda.is_available() else "cpu"}
-            )
-        except Exception as e:
-            raise RuntimeError(f"Cannot load language ID model: {e}")
+        # try:
+        #     from speechbrain.pretrained import EncoderClassifier
+        #     self.language_classifier = EncoderClassifier.from_hparams(
+        #         source="speechbrain/lang-id-voxlingua107-ecapa",
+        #         savedir=str(self.models_dir / "lang-id-voxlingua107-ecapa"),
+        #         run_opts={"device": "cuda" if torch.cuda.is_available() else "cpu"}
+        #     )
+        # except Exception as e:
+        #     raise RuntimeError(f"Cannot load language ID model: {e}")
     
     def run_pipeline(self, input_audio: str, output_dir: str):
         temp_dir = tempfile.mkdtemp(prefix="voice_sep_")
@@ -147,9 +147,9 @@ class AIVoiceSeparator:
                 return
             
             for speaker in speakers:
-                gender, gender_conf = self._classify_gender(speaker.audio_path)
-                speaker.characteristics['gender'] = gender
-                speaker.characteristics['gender_confidence'] = gender_conf
+                # gender, gender_conf = self._classify_gender(speaker.audio_path)
+                # speaker.characteristics['gender'] = gender
+               # speaker.characteristics['gender_confidence'] = gender_conf
                 
                 age, age_conf = self._classify_age(speaker.audio_tensor, speaker.sample_rate)
                 speaker.characteristics['age'] = age
@@ -331,78 +331,78 @@ class AIVoiceSeparator:
         
         return speakers
     
-    def _classify_gender(self, audio_path: str) -> Tuple[str, float]:
-        """
-        Stage 3: Classify gender using inaSpeechSegmenter (separate venv).
-        
-        Args:
-            audio_path: Path to audio file
-            
-        Returns:
-            Tuple of (gender, confidence)
-        """
-        print(f"    [Gender] Analyzing with inaSpeechSegmenter...")
-        
-        try:
-            # Build Python executable path in the gender detector venv
-            python_exe = self.gender_venv_path / "Scripts" / "python.exe"
-            
-            if not python_exe.exists():
-                print(f"    [Gender] ✗ Python not found: {python_exe}")
-                return 'unknown', 0.0
-            
-            # Create a simple script to run gender detection
-            script_code = f"""
-import sys
-sys.path.insert(0, r"{self.gender_detector_dir}")
-from gender_detector import GenderDetector
-
-detector = GenderDetector(detect_gender=True)
-results = detector.detect(r"{audio_path}")
-gender = results['dominant_gender']
-male_pct = results['percentages']['male']
-female_pct = results['percentages']['female']
-
-# Output format: gender|confidence
-if gender == 'male':
-    print(f"male|{{male_pct}}")
-elif gender == 'female':
-    print(f"female|{{female_pct}}")
-else:
-    print("unknown|0.0")
-"""
-            
-            # Run the script in the separate venv
-            result = subprocess.run(
-                [str(python_exe), "-c", script_code],
-                capture_output=True,
-                text=True,
-                timeout=30
-            )
-            
-            if result.returncode != 0:
-                print(f"    [Gender] ✗ Error: {result.stderr}")
-                raise RuntimeError(f"Gender classification failed: {result.stderr}")
-            
-            # Parse output: "gender|confidence"
-            output = result.stdout.strip().split('\n')[-1]  # Last line
-            parts = output.split('|')
-            
-            if len(parts) == 2:
-                gender = parts[0]
-                confidence = float(parts[1])
-                print(f"    [Gender] {gender.upper()} (confidence: {confidence:.1f}%)")
-                return gender, confidence
-            else:
-                print(f"    [Gender] ✗ Unexpected output: {output}")
-                raise RuntimeError(f"Gender classification output parse error: {output}")
-                
-        except subprocess.TimeoutExpired:
-            print(f"    [Gender] ✗ Timeout (>30s)")
-            raise RuntimeError("Gender classification timeout")
-        except Exception as e:
-            print(f"    [Gender] ✗ Error: {e}")
-            raise
+#     def _classify_gender(self, audio_path: str) -> Tuple[str, float]:
+#         """
+#         Stage 3: Classify gender using inaSpeechSegmenter (separate venv).
+#
+#         Args:
+#             audio_path: Path to audio file
+#
+#         Returns:
+#             Tuple of (gender, confidence)
+#         """
+#         print(f"    [Gender] Analyzing with inaSpeechSegmenter...")
+#
+#         try:
+#             # Build Python executable path in the gender detector venv
+#             python_exe = self.gender_venv_path / "Scripts" / "python.exe"
+#
+#             if not python_exe.exists():
+#                 print(f"    [Gender] ✗ Python not found: {python_exe}")
+#                 return 'unknown', 0.0
+#
+#             # Create a simple script to run gender detection
+#             script_code = f"""
+# import sys
+# sys.path.insert(0, r"{self.gender_detector_dir}")
+# from gender_detector import GenderDetector
+#
+# detector = GenderDetector(detect_gender=True)
+# results = detector.detect(r"{audio_path}")
+# gender = results['dominant_gender']
+# male_pct = results['percentages']['male']
+# female_pct = results['percentages']['female']
+#
+# # Output format: gender|confidence
+# if gender == 'male':
+#     print(f"male|{{male_pct}}")
+# elif gender == 'female':
+#     print(f"female|{{female_pct}}")
+# else:
+#     print("unknown|0.0")
+# """
+#
+#             # Run the script in the separate venv
+#             result = subprocess.run(
+#                 [str(python_exe), "-c", script_code],
+#                 capture_output=True,
+#                 text=True,
+#                 timeout=30
+#             )
+#
+#             if result.returncode != 0:
+#                 print(f"    [Gender] ✗ Error: {result.stderr}")
+#                 raise RuntimeError(f"Gender classification failed: {result.stderr}")
+#
+#             # Parse output: "gender|confidence"
+#             output = result.stdout.strip().split('\n')[-1]  # Last line
+#             parts = output.split('|')
+#
+#             if len(parts) == 2:
+#                 gender = parts[0]
+#                 confidence = float(parts[1])
+#                 print(f"    [Gender] {gender.upper()} (confidence: {confidence:.1f}%)")
+#                 return gender, confidence
+#             else:
+#                 print(f"    [Gender] ✗ Unexpected output: {output}")
+#                 raise RuntimeError(f"Gender classification output parse error: {output}")
+#
+#         except subprocess.TimeoutExpired:
+#             print(f"    [Gender] ✗ Timeout (>30s)")
+#             raise RuntimeError("Gender classification timeout")
+#         except Exception as e:
+#             print(f"    [Gender] ✗ Error: {e}")
+#             raise
     
     def _classify_age(self, audio_tensor: torch.Tensor, sr: int) -> Tuple[str, float]:
         """

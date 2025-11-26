@@ -30,10 +30,10 @@ def test_music_separation():
     # ========================================================================
     
     # Input: Path to your music file (mp3, wav, flac, etc.)
-    INPUT_FILE = r"C:\Users\amkma\Desktop\speeches\songan\el_gawdan.mp3"
+    INPUT_FILE = r"C:\Users\user\Desktop\mfesh_9a7eb.mp3"
     
     # Output: Directory where separated stems will be saved
-    OUTPUT_DIR = r"C:\Users\amkma\Desktop\speeches\songan\gawdan"
+    OUTPUT_DIR = r"C:\Users\user\Desktop\test_music_output"
     
     # Model: Choose separation model
     # Options: "spleeter:2stems", "spleeter:4stems", "spleeter:5stems"
