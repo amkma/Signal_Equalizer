@@ -1,0 +1,30 @@
+[
+  {
+    "name": "Dog Bark (Low)",
+    "gain": 1.0,
+    "windows": [
+      {"fmin": 300, "fmax": 1200}
+    ]
+  },
+  {
+    "name": "Cat Meow",
+    "gain": 1.0,
+    "windows": [
+      {"fmin": 700, "fmax": 1800}
+    ]
+  },
+  {
+    "name": "Bird Chirp",
+    "gain": 1.0,
+    "windows": [
+      {"fmin": 2500, "fmax": 8000}
+    ]
+  },
+  {
+    "name": "Cow Moo",
+    "gain": 1.0,
+    "windows": [
+      {"fmin": 60, "fmax": 300}
+    ]
+  }
+]

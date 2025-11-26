@@ -41,6 +41,7 @@ const btnClearSubBand = firstSel("#btn-clear-subband");
 const btnSaveScheme = firstSel("#btn-scheme-save");
 const btnLoadScheme = firstSel("#btn-scheme-load");
 const fileSchemeInput = firstSel("#file-scheme");
+const btnResetEq = firstSel("#btn-reset-eq");
 
 // AI / Players
 const btnRunAI = firstSel("#btn-run-ai");
@@ -90,6 +91,7 @@ function setGlobalState(enabled) {
 
     if(btnSaveScheme) btnSaveScheme.disabled = disabled;
     if(fileSchemeInput) fileSchemeInput.disabled = disabled;
+    if(btnResetEq) btnResetEq.disabled = disabled;
 
     const loadLabel = document.querySelector(".file-btn");
     if(loadLabel) {
@@ -159,7 +161,8 @@ function drawGridLogic(ctx, W, H, marginL, marginR, xLabels, yLabels, xTitle, yT
     ctx.strokeStyle = gridColor; ctx.fillStyle = textColor; ctx.lineWidth = 1;
     ctx.font = "10px monospace"; ctx.textAlign = "center";
 
-    const drawH = H - 20;
+    const marginBottom = 30;
+    const drawH = H - marginBottom;
     const drawW = W - marginL - marginR;
 
     ctx.beginPath(); ctx.moveTo(0, drawH); ctx.lineTo(W, drawH); ctx.stroke();
@@ -178,8 +181,22 @@ function drawGridLogic(ctx, W, H, marginL, marginR, xLabels, yLabels, xTitle, yT
         ctx.fillText(lbl.text, marginL - 8, y + 3);
     });
 
-    if(xTitle) { ctx.textAlign = "right"; ctx.fillText(xTitle, W - 10, drawH + 15); }
-    if(yTitle) { ctx.save(); ctx.translate(10, H/2); ctx.rotate(-Math.PI/2); ctx.textAlign="center"; ctx.fillText(yTitle, 0, 0); ctx.restore(); }
+    ctx.fillStyle = "#fff";
+    ctx.font = "bold 11px sans-serif";
+
+    if(xTitle) {
+        ctx.textAlign = "center";
+        ctx.fillText(xTitle, marginL + drawW/2, H - 5);
+    }
+
+    if(yTitle) {
+        ctx.save();
+        ctx.translate(15, drawH/2);
+        ctx.rotate(-Math.PI/2);
+        ctx.textAlign="center";
+        ctx.fillText(yTitle, 0, 0);
+        ctx.restore();
+    }
 }
 
 function drawSpectrum(mags, fmax, canvas, ctx){
@@ -187,7 +204,7 @@ function drawSpectrum(mags, fmax, canvas, ctx){
   const W=canvas.width, H=canvas.height;
   ctx.clearRect(0,0,W,H); ctx.fillStyle="#000"; ctx.fillRect(0,0,W,H);
 
-  const marginL=30, marginR=20, marginTop=30, marginBottom=20;
+  const marginL=40, marginR=20, marginTop=30, marginBottom=30;
   const drawW=W-marginL-marginR;
   const drawH=H-marginTop-marginBottom;
 
@@ -198,24 +215,23 @@ function drawSpectrum(mags, fmax, canvas, ctx){
       xLabels.push({pos: i/5, text: text});
   }
 
-  ctx.strokeStyle = "#444"; ctx.fillStyle = "#aaa"; ctx.lineWidth = 1; ctx.font = "10px monospace"; ctx.textAlign = "center";
-  ctx.beginPath(); ctx.moveTo(0, H - marginBottom); ctx.lineTo(W, H - marginBottom); ctx.stroke();
-  ctx.beginPath(); ctx.moveTo(marginL, 0); ctx.lineTo(marginL, H); ctx.stroke();
+  // Handle Y-Axis Labels based on Audiogram vs Linear
+  let yLabels = [];
+  let yTitle = "Amplitude";
+  if(state.scale === 'audiogram') {
+      yLabels = [
+          {pos:0, text:"-80dB"},
+          {pos:0.25, text:"-60dB"},
+          {pos:0.5, text:"-40dB"},
+          {pos:0.75, text:"-20dB"},
+          {pos:1, text:"0dB"}
+      ];
+      yTitle = "Magnitude (dB)";
+  } else {
+      yLabels = [{pos:0, text:"0"}, {pos:1, text:"1.0"}];
+  }
 
-  xLabels.forEach(lbl => {
-      const x = marginL + (lbl.pos * drawW);
-      ctx.beginPath(); ctx.moveTo(x, H - marginBottom); ctx.lineTo(x, H - marginBottom + 5); ctx.stroke();
-      ctx.fillText(lbl.text, x, H - marginBottom + 15);
-  });
-
-  ctx.textAlign = "right";
-  let y1 = marginTop;
-  ctx.beginPath(); ctx.moveTo(marginL - 5, y1); ctx.lineTo(marginL, y1); ctx.stroke();
-  ctx.fillText("1", marginL - 8, y1 + 3);
-
-  let y0 = marginTop + drawH;
-  ctx.beginPath(); ctx.moveTo(marginL - 5, y0); ctx.lineTo(marginL, y0); ctx.stroke();
-  ctx.fillText("0", marginL - 8, y0 + 3);
+  drawGridLogic(ctx, W, H, marginL, marginR, xLabels, yLabels, "Frequency (Hz/kHz)", yTitle);
 
   ctx.strokeStyle = state.scale === "audiogram" ? "#fa7e1e" : "#d62976";
   ctx.lineWidth=2; ctx.beginPath();
@@ -232,16 +248,16 @@ function drawSpectrum(mags, fmax, canvas, ctx){
           const x1 = marginL + (sb.fmin / state.fmax) * drawW;
           const x2 = marginL + (sb.fmax / state.fmax) * drawW;
           ctx.fillStyle = "rgba(214, 41, 118, 0.20)";
-          ctx.fillRect(x1, 0, x2 - x1, H);
+          ctx.fillRect(x1, 0, x2 - x1, drawH + marginTop);
           ctx.strokeStyle = "rgba(255, 255, 255, 0.3)"; ctx.lineWidth = 1;
-          ctx.strokeRect(x1, 0, x2 - x1, H);
+          ctx.strokeRect(x1, 0, x2 - x1, drawH + marginTop);
       });
   }
 
   if(state.mode==="generic" && state.selecting){
     const x1=Math.min(state.selStartX,state.selEndX), x2=Math.max(state.selStartX,state.selEndX);
     ctx.fillStyle="rgba(255, 255, 255, 0.20)";
-    ctx.fillRect(Math.max(marginL,x1), 0, x2 - Math.max(marginL,x1), H);
+    ctx.fillRect(Math.max(marginL,x1), 0, x2 - Math.max(marginL,x1), drawH + marginTop);
   }
 }
 
@@ -250,11 +266,14 @@ function drawWavePreview(canvas, ctx, samples, playheadRatio = null){
   const W=canvas.width, H=canvas.height;
   ctx.clearRect(0,0,W,H); ctx.fillStyle="#000"; ctx.fillRect(0,0,W,H);
 
-  const marginL=75, marginR=20, drawW=W-marginL-marginR, drawH=H-20, mid=drawH/2;
+  const marginL=50, marginR=20, marginBottom=30;
+  const drawW=W-marginL-marginR, drawH=H-marginBottom, mid=drawH/2;
   const xLabels=[]; const duration=state.duration||0;
-  for(let i=0; i<=5; i++) xLabels.push({pos:i/5, text:(duration*i/5).toFixed(1)+"s"});
+  for(let i=0; i<=5; i++) xLabels.push({pos:i/5, text:(duration*i/5).toFixed(1)});
 
-  drawGridLogic(ctx, W, H, marginL, marginR, xLabels, [{pos:0,text:"-1"},{pos:0.5,text:"0"},{pos:1,text:"1"}], "Time", "Amp");
+  drawGridLogic(ctx, W, H, marginL, marginR, xLabels,
+    [{pos:0,text:"-1"},{pos:0.5,text:"0"},{pos:1,text:"1"}],
+    "Time (s)", "Amplitude");
 
   ctx.strokeStyle="#a8a8a8"; ctx.lineWidth=1; ctx.beginPath();
   const step=Math.max(1,Math.ceil(samples.length/drawW));
@@ -274,22 +293,22 @@ function drawWavePreview(canvas, ctx, samples, playheadRatio = null){
 function drawSpectrogram(canvas, ctx, b64Data, isInput=true, playheadRatio=null) {
     if(!ctx) return;
     const W = canvas.width, H = canvas.height;
-    const marginL = 75, marginR = 20;
+    const marginL = 50, marginR = 20, marginBottom=30;
     const drawW = W - marginL - marginR;
-    const drawH = H - 20;
+    const drawH = H - marginBottom;
 
     ctx.clearRect(0,0,W,H); ctx.fillStyle="#000"; ctx.fillRect(0,0,W,H);
 
     const yLabels = [];
     for(let i=0; i<=4; i++){
         const norm = i/4;
-        const freq = (state.fmax||10000) * (norm*norm);
+        const freq = (state.fmax||10000) * norm;
         yLabels.push({pos:norm, text:(freq/1000).toFixed(1)+"k"});
     }
     const xLabels = []; const duration=state.duration||10;
-    for(let i=0; i<=5; i++) xLabels.push({pos:i/5, text:(duration*i/5).toFixed(1)+"s"});
+    for(let i=0; i<=5; i++) xLabels.push({pos:i/5, text:(duration*i/5).toFixed(1)});
 
-    drawGridLogic(ctx, W, H, marginL, marginR, xLabels, yLabels, "Time", "Freq");
+    drawGridLogic(ctx, W, H, marginL, marginR, xLabels, yLabels, "Time (s)", "Frequency (kHz)");
 
     const bitmap = isInput ? state.specInBitmap : state.specOutBitmap;
 
@@ -334,12 +353,6 @@ async function refreshSpectrograms() {
     const jSpecs = typeof specs === "object" ? specs : JSON.parse(new TextDecoder().decode(specs));
     drawSpectrogram(specInCanvas, specInCtx, jSpecs.in_png, true);
     drawSpectrogram(specOutCanvas, specOutCtx, jSpecs.out_png, false);
-}
-
-function renderSpectrograms(playheadRatio=null) {
-    // This function is kept for fallback but logic is handled in updateVisuals now
-    drawSpectrogram(specInCanvas, specInCtx, null, true, playheadRatio);
-    drawSpectrogram(specOutCanvas, specOutCtx, null, false, playheadRatio);
 }
 
 async function refreshOutputs(){
@@ -387,7 +400,7 @@ async function refreshAll(){
 function bindSpectrumSelection(){
   if(!spectrumCanvas) return;
   const cvs=spectrumCanvas;
-  const marginL = 30;
+  const marginL = 40;
 
   cvs.addEventListener("mousedown",(e)=>{
     if(state.mode!=="generic" || !state.signalId) return;
@@ -404,16 +417,20 @@ function bindSpectrumSelection(){
   window.addEventListener("mouseup", async ()=>{
     if(!state.selecting) return; state.selecting=false; redrawSpectrum();
     const band=await promptBandFromSelection();
-    if(band){ state.subbands.push(band); renderEqSliders(); redrawSpectrum(); await applyEqualizer(); }
+    if(band){
+        state.subbands.push(band);
+        renderEqSliders();
+        redrawSpectrum();
+    }
   });
 
   function redrawSpectrum(){ if(state.spectrumMags) drawSpectrum(state.spectrumMags, state.fmax, spectrumCanvas, spectrumCtx); }
   function promptBandFromSelection(){
     const W = spectrumCanvas.width;
-    const drawW = W - 30 - 20;
+    const drawW = W - 40 - 20;
     const x1=Math.min(state.selStartX,state.selEndX), x2=Math.max(state.selStartX,state.selEndX);
-    const freq1 = ((Math.max(0, x1 - 30) / drawW) * state.fmax).toFixed(1);
-    const freq2 = ((Math.max(0, x2 - 30) / drawW) * state.fmax).toFixed(1);
+    const freq1 = ((Math.max(0, x1 - 40) / drawW) * state.fmax).toFixed(1);
+    const freq2 = ((Math.max(0, x2 - 40) / drawW) * state.fmax).toFixed(1);
     const resp = window.prompt(`Sub-band:\nMin Hz, Max Hz, Gain (0..2)\n`, `${freq1}, ${freq2}, 1.0`); if(!resp) return null;
     const p = resp.split(",").map(s=>+s.trim()); if(p.length<3||p.some(Number.isNaN)) return null;
     return {id:`sb${Date.now()}`, fmin:Math.min(p[0],p[1]), fmax:Math.max(p[0],p[1]), gain:Math.max(0,Math.min(2,p[2]))};
@@ -434,9 +451,28 @@ function renderGenericSubbands(){
     eqPanel.appendChild(row);
   });
   eqPanel.oninput = async (e)=>{ const r=e.target; if(r.tagName==="INPUT"){ const id=r.dataset.id; const sb=state.subbands.find(s=>s.id===id); if(sb){ sb.gain=+r.value; r.parentElement.querySelector(".sb-gain").textContent=`${sb.gain.toFixed(2)}x`; await applyEqualizerDebounced(); }}};
-  eqPanel.onclick  = async (e)=>{ const b=e.target.closest("button"); if(!b) return; const id=b.dataset.id; const sb=state.subbands.find(s=>s.id===id); if(!sb) return;
-    if(b.dataset.act==="del"){ state.subbands=state.subbands.filter(s=>s.id!==id); renderEqSliders(); if(state.spectrumMags) drawSpectrum(state.spectrumMags, state.fmax, spectrumCanvas, spectrumCtx); await applyEqualizer(); }
-    else { /* edit logic */ }
+  eqPanel.onclick  = async (e)=>{
+      const b=e.target.closest("button"); if(!b) return; const id=b.dataset.id; const sb=state.subbands.find(s=>s.id===id); if(!sb) return;
+      if(b.dataset.act==="del"){
+          state.subbands=state.subbands.filter(s=>s.id!==id);
+          renderEqSliders();
+          if(state.spectrumMags) drawSpectrum(state.spectrumMags, state.fmax, spectrumCanvas, spectrumCtx);
+          await applyEqualizer();
+      }
+      else if(b.dataset.act==="edit") {
+        const resp = window.prompt(`Edit Sub-band:\nMin Hz, Max Hz, Gain`, `${sb.fmin.toFixed(1)}, ${sb.fmax.toFixed(1)}, ${sb.gain.toFixed(2)}`);
+        if(resp){
+            const p = resp.split(",").map(s=>+s.trim());
+            if(p.length>=2 && !p.some(Number.isNaN)){
+                sb.fmin = Math.min(p[0], p[1]);
+                sb.fmax = Math.max(p[0], p[1]);
+                if(p[2] !== undefined && !isNaN(p[2])) sb.gain = Math.max(0, Math.min(2, p[2]));
+                renderEqSliders();
+                if(state.spectrumMags) drawSpectrum(state.spectrumMags, state.fmax, spectrumCanvas, spectrumCtx);
+                await applyEqualizer();
+            }
+        }
+      }
   };
 }
 
@@ -472,6 +508,16 @@ async function applyEqualizer(){
 }
 
 function bindToggles(){
+  if(btnResetEq) btnResetEq.addEventListener("click", async () => {
+    if(!state.signalId) return;
+    const target = state.mode === 'generic' ? state.subbands : state.customSliders;
+    if(target && target.length > 0) {
+        target.forEach(s => s.gain = 1.0);
+        renderEqSliders();
+        await applyEqualizer();
+    }
+  });
+
   if(btnClearSubBand) btnClearSubBand.addEventListener("click", async ()=>{
       if(state.mode !== 'generic' || !state.signalId) return;
       state.subbands = []; renderEqSliders(); if(state.spectrumMags) drawSpectrum(state.spectrumMags, state.fmax, spectrumCanvas, spectrumCtx); await applyEqualizer();
@@ -488,35 +534,55 @@ function bindSaveLoad(){
   if(fileSchemeInput) fileSchemeInput.addEventListener("change", async (e)=>{ const f = e.target.files?.[0]; if(!f) return; const data = JSON.parse(await f.text()); await apiPost(`/api/load_scheme/${state.signalId}/`, data); state.mode=data.mode||"generic"; state.subbands=data.subbands||[]; state.customSliders=data.sliders||[]; if(modeSelect) modeSelect.value=state.mode; renderEqSliders(); await applyEqualizer(); });
 }
 
+function bindCanvasSeeking() {
+    const configs = [
+        { cvs: inputCanvas,  audio: audioIn,  marginL: 50, marginR: 20 },
+        { cvs: specInCanvas, audio: audioIn,  marginL: 50, marginR: 20 },
+        { cvs: outputCanvas, audio: audioOut, marginL: 50, marginR: 20 },
+        { cvs: specOutCanvas, audio: audioOut, marginL: 50, marginR: 20 }
+    ];
+
+    configs.forEach(cfg => {
+        if(!cfg.cvs) return;
+
+        const handleSeek = (e) => {
+            if(!state.duration) return;
+            const rect = cfg.cvs.getBoundingClientRect();
+            const scaleX = cfg.cvs.width / rect.width;
+            const clickX = (e.clientX - rect.left) * scaleX;
+
+            const drawW = cfg.cvs.width - cfg.marginL - cfg.marginR;
+
+            let ratio = (clickX - cfg.marginL) / drawW;
+            ratio = Math.max(0, Math.min(1, ratio));
+
+            if(cfg.audio) {
+                cfg.audio.currentTime = ratio * state.duration;
+            }
+        };
+
+        let isDragging = false;
+        cfg.cvs.addEventListener('mousedown', (e) => { isDragging = true; handleSeek(e); });
+        window.addEventListener('mousemove', (e) => { if(isDragging) handleSeek(e); });
+        window.addEventListener('mouseup', () => { isDragging = false; });
+    });
+}
+
 function bindPlayback(){
   if(!audioIn || !audioOut) return;
 
   function updateVisuals() {
       requestAnimationFrame(updateVisuals);
 
-      // --- Input Visuals (Independent) ---
       let inRatio = 0;
-      if (state.duration > 0) {
-          inRatio = audioIn.currentTime / state.duration;
-      }
+      if (state.duration > 0) { inRatio = audioIn.currentTime / state.duration; }
+      if(state.inputSamples.length > 0) drawWavePreview(inputCanvas, inCtx, state.inputSamples, inRatio);
+      if(state.specInBitmap) drawSpectrogram(specInCanvas, specInCtx, null, true, inRatio);
 
-      if(state.inputSamples.length > 0)
-          drawWavePreview(inputCanvas, inCtx, state.inputSamples, inRatio);
-
-      if(state.specInBitmap)
-          drawSpectrogram(specInCanvas, specInCtx, null, true, inRatio);
-
-      // --- Output Visuals (Independent) ---
       let outRatio = 0;
-      if (state.duration > 0) {
-          outRatio = audioOut.currentTime / state.duration;
-      }
-
-      if(state.outputSamples.length > 0)
-          drawWavePreview(outputCanvas, outCtx, state.outputSamples, outRatio);
-
-      if(state.specOutBitmap)
-          drawSpectrogram(specOutCanvas, specOutCtx, null, false, outRatio);
+      if (state.duration > 0) { outRatio = audioOut.currentTime / state.duration; }
+      if(state.outputSamples.length > 0) drawWavePreview(outputCanvas, outCtx, state.outputSamples, outRatio);
+      if(state.specOutBitmap) drawSpectrogram(specOutCanvas, specOutCtx, null, false, outRatio);
   }
 
   requestAnimationFrame(updateVisuals);
@@ -530,7 +596,6 @@ function bindPlayback(){
   btnSyncReset.addEventListener("click", () => {
     audioIn.pause(); audioOut.pause(); audioIn.currentTime = 0; audioOut.currentTime = 0;
     btnPlayInput.textContent = "Play Input"; btnPlayOutput.textContent = "Play Output";
-    // Visuals reset naturally via updateVisuals loop
   });
 }
 
@@ -540,6 +605,7 @@ function init(){
     bindPlayback();
     bindToggles();
     bindSaveLoad();
+    bindCanvasSeeking();
     setGlobalState(false);
     setStatus("Ready.");
 }

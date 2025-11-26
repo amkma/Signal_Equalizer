@@ -1,0 +1,30 @@
+[
+  {
+    "name": "Piano",
+    "gain": 1.0,
+    "windows": [
+      {"fmin": 27, "fmax": 4200}
+    ]
+  },
+  {
+    "name": "Drums (Kick/Snare)",
+    "gain": 1.0,
+    "windows": [
+      {"fmin": 20, "fmax": 300}
+    ]
+  },
+  {
+    "name": "Violin",
+    "gain": 1.0,
+    "windows": [
+      {"fmin": 200, "fmax": 3500}
+    ]
+  },
+  {
+    "name": "Bass Guitar",
+    "gain": 1.0,
+    "windows": [
+      {"fmin": 40, "fmax": 400}
+    ]
+  }
+]
