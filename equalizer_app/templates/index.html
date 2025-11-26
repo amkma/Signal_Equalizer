@@ -11,10 +11,16 @@
 
 <main class="workspace">
 
-  <aside class="left-panel">
-    <div class="panel-title">
-      <span>Equalizer</span>
-      <span id="eq-mode-label"></span>
+  <!-- Reduced Height to 600px (was 630px) to remove bottom gap -->
+  <aside class="left-panel" style="height: 600px;">
+    <div class="panel-title" style="display:flex; justify-content:space-between; align-items:center;">
+      <div>
+          <span>Equalizer</span>
+          <span id="eq-mode-label"></span>
+      </div>
+      <button id="btn-reset-eq" style="font-size:13px; font-weight:600; padding:6px 12px; background:#333; border:1px solid #555; border-radius:4px; color:#fff; cursor:pointer;">
+        Reset
+      </button>
     </div>
 
     <div id="generic-tools" class="tool-row single-line eq-btn-group">
@@ -29,7 +35,8 @@
     <div id="eq-sliders" class="sliders"></div>
   </aside>
 
-  <section class="center-panel">
+  <!-- Reduced Height to 600px (was 630px) to remove bottom gap -->
+  <section class="center-panel" style="height: 600px;">
     <div class="panel-header-row">
         <div class="header-left">
             <div class="panel-title-inline">Spectrum Analysis</div>
@@ -50,11 +57,13 @@
         </div>
     </div>
 
-    <canvas id="fft-canvas" width="1200" height="320"></canvas>
+    <canvas id="fft-canvas" width="1200" height="500"></canvas>
+    
     <div id="spectrum-loader" class="loader-bar hidden"></div>
   </section>
 
-  <aside id="ai-panel" class="right-panel hidden">
+  <!-- Reduced Height to 600px (was 630px) to remove bottom gap -->
+  <aside id="ai-panel" class="right-panel hidden" style="height: 600px;">
     <div class="panel-title">AI Models</div>
     <div class="tool-row">
       <label>Model:

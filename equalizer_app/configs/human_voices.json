@@ -1,0 +1,30 @@
+[
+  {
+    "name": "Male Voice",
+    "gain": 1.0,
+    "windows": [
+      {"fmin": 85, "fmax": 180}
+    ]
+  },
+  {
+    "name": "Female Voice",
+    "gain": 1.0,
+    "windows": [
+      {"fmin": 165, "fmax": 255}
+    ]
+  },
+  {
+    "name": "Child Voice",
+    "gain": 1.0,
+    "windows": [
+      {"fmin": 250, "fmax": 600}
+    ]
+  },
+  {
+    "name": "Sibilance (ss/sh)",
+    "gain": 1.0,
+    "windows": [
+      {"fmin": 4000, "fmax": 10000}
+    ]
+  }
+]

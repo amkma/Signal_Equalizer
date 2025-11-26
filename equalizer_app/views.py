@@ -1,4 +1,3 @@
-# equalizer_app/views.py
 import io, json, os, uuid, wave, math, struct, base64
 from typing import List, Dict
 from django.http import HttpResponse, JsonResponse, HttpResponseBadRequest
@@ -11,6 +10,7 @@ from .utils.fft_bridge import fft_cpp
 
 MEDIA_ROOT = getattr(settings, "MEDIA_ROOT", os.path.join(settings.BASE_DIR, "media"))
 DATA_DIR = os.path.join(MEDIA_ROOT, "signals")
+CONFIG_DIR = os.path.join(settings.BASE_DIR, "equalizer_app", "configs")
 os.makedirs(DATA_DIR, exist_ok=True)
 
 REG: Dict[str, dict] = {}
@@ -88,7 +88,7 @@ def upload_signal(request):
     xz = np.zeros(n2, dtype=np.float32)
     xz[:n] = x_float
 
-    # Default initial FFT using Numpy for speed/compatibility
+    # Default initial FFT using Numpy
     input_X_complex = np.fft.fft(xz)
 
     REG[sid] = {
@@ -116,49 +116,54 @@ def summary(request, sid):
 
 
 def _compute_spectrum(x: np.ndarray, sr: int, scale: str, backend: str):
-    # The Highlight Marker Bug:
-    # The frontend 'drawSpectrum' loop chokes on large arrays during drag events.
-    # When backend='cpp', we get ~100k points. When 'numpy', we used STFT avg (~1k points).
-    # We MUST downsample the high-res FFT for visual preview.
+    VISUAL_POINTS = 2000
 
-    VISUAL_POINTS = 2000  # Safe number for JS Canvas performance
+    # 1. Windowing (Fixes spectral leakage/spikiness)
+    window = np.hanning(len(x))
+    x_windowed = x * window
 
     if backend == 'cpp':
         n2 = _next_pow2(len(x))
         xz = np.zeros(n2, dtype=np.float32)
-        xz[:len(x)] = x
+        xz[:len(x)] = x_windowed
         X = fft_cpp(xz)
         mag = np.abs(X[:n2 // 2])
-
-        # Normalize
-        if mag.max() > 0: mag /= mag.max()
-
-        # Apply Audiogram Scaling
-        if scale == "audiogram":
-            mag = np.log10(mag + 1e-9)
-            mag = (mag - mag.min()) / (mag.max() - mag.min())
-
-        # DOWNSAMPLE FOR FRONTEND PERFORMANCE
-        if len(mag) > VISUAL_POINTS:
-            # Simple decimation
-            step = len(mag) // VISUAL_POINTS
-            mag = mag[::step]
-
-        return mag.tolist(), float(sr / 2.0)
-
     else:
-        # Default Python STFT Average (already low res)
-        S = stft_spectrogram(x, sr)
-        if S.size == 0: return [0.0], sr / 2.0
-        mag = np.mean(S, axis=1)
+        # Numpy fallback
+        X = np.fft.fft(x_windowed)
+        mag = np.abs(X[:len(X) // 2])
 
-        mag_max = mag.max()
-        if mag_max > 1e-12: mag = mag / mag_max
+    # 2. Remove DC Offset (Index 0) - CRITICAL FIX
+    # Large DC offsets squash the rest of the graph when normalized.
+    if len(mag) > 0:
+        mag[0] = 0
 
-        if scale == "audiogram":
-            mag = np.power(mag, 0.7)
+    # 3. Normalize
+    max_val = mag.max()
+    if max_val > 1e-12:
+        mag /= max_val
 
-        return mag.tolist(), float(sr / 2.0)
+    # 4. Visibility Scaling
+    if scale == "audiogram":
+        # dB Scale
+        mag_db = 20 * np.log10(mag + 1e-9)
+        min_db = -80.0
+        mag = (mag_db - min_db) / (0 - min_db)
+        mag = np.clip(mag, 0, 1)
+    else:
+        # "Linear" Mode Enhanced
+        # Use Square Root compression to lift high frequencies/low amplitudes
+        # so they are visible, while keeping the 0-1 range.
+        mag = np.sqrt(mag)
+
+    # 5. Smooth Downsampling (Binning)
+    if len(mag) > VISUAL_POINTS:
+        step = len(mag) // VISUAL_POINTS
+        cutoff = step * VISUAL_POINTS
+        # Average chunks instead of skipping
+        mag = mag[:cutoff].reshape(-1, step).mean(axis=1)
+
+    return mag.tolist(), float(sr / 2.0)
 
 
 def spectrum(request, sid):
@@ -192,18 +197,14 @@ def spectrograms(request, sid):
 
     import PIL.Image as Image
     def process_and_encode(S):
+        # Remove DC from Spectrogram too
+        if S.shape[0] > 0: S[0, :] = 0
+
         S_log = np.log1p(S * 1000)
         s_min, s_max = S_log.min(), S_log.max()
         S_norm = (S_log - s_min) / (s_max - s_min) if (s_max - s_min > 1e-12) else np.zeros_like(S_log)
-        img_data = (S_norm * 255).astype(np.uint8)[::-1, :]
-
-        h, w = img_data.shape
-        if h > 1:
-            y_lin = np.linspace(0, 1, h)
-            y_log = np.power(y_lin, 0.25)
-            src_indices = np.clip((y_log * (h - 1)).astype(int), 0, h - 1)
-            img_data = img_data[src_indices, :]
-
+        img_data = (S_norm * 255).astype(np.uint8)
+        img_data = img_data[::-1, :]
         im = Image.fromarray(img_data, mode="L")
         buf = io.BytesIO()
         im.save(buf, format="PNG")
@@ -219,27 +220,19 @@ def custom_conf(request, sid):
     mode = request.GET.get("mode", "generic").lower()
     sliders = []
 
+    filename = ""
     if "animal" in mode:
-        sliders = [
-            {"name": "Dog (Low/Bark)", "gain": 1.0, "windows": [{"fmin": 300, "fmax": 1200}]},
-            {"name": "Cat (Meow)", "gain": 1.0, "windows": [{"fmin": 700, "fmax": 1800}]},
-            {"name": "Bird (High)", "gain": 1.0, "windows": [{"fmin": 2500, "fmax": 8000}]},
-            {"name": "Cow/Horse (Low)", "gain": 1.0, "windows": [{"fmin": 50, "fmax": 400}]}
-        ]
+        filename = "animal_sounds.json"
     elif "music" in mode:
-        sliders = [
-            {"name": "Piano", "gain": 1.0, "windows": [{"fmin": 150, "fmax": 1200}, {"fmin": 2000, "fmax": 4000}]},
-            {"name": "Drums", "gain": 1.0, "windows": [{"fmin": 40, "fmax": 180}]},
-            {"name": "Violin", "gain": 1.0, "windows": [{"fmin": 300, "fmax": 3500}]},
-            {"name": "Bass", "gain": 1.0, "windows": [{"fmin": 40, "fmax": 200}]},
-        ]
+        filename = "musical_instruments.json"
     elif "human" in mode:
-        sliders = [
-            {"name": "Male", "gain": 1.0, "windows": [{"fmin": 85, "fmax": 180}, {"fmin": 2000, "fmax": 4000}]},
-            {"name": "Female", "gain": 1.0, "windows": [{"fmin": 165, "fmax": 255}, {"fmin": 2500, "fmax": 5000}]},
-            {"name": "Child", "gain": 1.0, "windows": [{"fmin": 250, "fmax": 400}, {"fmin": 3000, "fmax": 6000}]},
-            {"name": "Sibilants", "gain": 1.0, "windows": [{"fmin": 4000, "fmax": 10000}]},
-        ]
+        filename = "human_voices.json"
+
+    if filename:
+        json_path = os.path.join(CONFIG_DIR, filename)
+        if os.path.exists(json_path):
+            with open(json_path, "r", encoding="utf-8") as f:
+                sliders = json.load(f)
     return _resp_json({"sliders": sliders})
 
 
@@ -319,14 +312,14 @@ def load_settings(request, sid):
 
 def audio_input(request, sid):
     meta = REG[sid]
-    buf = io.BytesIO();
+    buf = io.BytesIO()
     _write_wav(buf, meta["sr"], meta["input_x"])
     return HttpResponse(buf.getvalue(), content_type="audio/wav")
 
 
 def audio_output(request, sid):
     meta = REG[sid]
-    buf = io.BytesIO();
+    buf = io.BytesIO()
     _write_wav(buf, meta["sr"], meta.get("output_x", meta["input_x"]))
     return HttpResponse(buf.getvalue(), content_type="audio/wav")
 
