@@ -3,9 +3,11 @@ import json
 import tempfile
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 from dataclasses import dataclass
 from typing import List, Dict, Tuple
+from functools import partial
 import warnings
 warnings.filterwarnings('ignore')
 
@@ -63,8 +65,10 @@ class AIVoiceSeparator:
         self.models_dir = Path(__file__).parent / "ai_models_cache"
         self.models_dir.mkdir(exist_ok=True)
         
+        # Disable symlinks for Windows compatibility
         os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
         os.environ["SPEECHBRAIN_CACHE"] = str(self.models_dir)
+        os.environ["HF_HUB_DISABLE_SYMLINKS"] = "1"
         
         self.gender_detector_dir = Path(__file__).parent / "zz_inaspeech"
         self.gender_venv_path = Path(__file__).parent.parent.parent / ".venvan" / ".inaspeechan_venv"
@@ -77,15 +81,33 @@ class AIVoiceSeparator:
         self._load_models()
     
     def _load_models(self):
+        # Load MossFormer2 separator
         try:
-            from speechbrain.pretrained import SepformerSeparation
-            self.separator = SepformerSeparation.from_hparams(
-                source="speechbrain/sepformer-whamr",
-                savedir=str(self.models_dir / "sepformer-whamr"),
-                run_opts={"device": "cuda" if torch.cuda.is_available() else "cpu"}
-            )
+            # Add asteroid model directory to path
+            asteroid_dir = Path(__file__).parent.parent.parent.parent / "asteroid"
+            model_dir = asteroid_dir / "egs" / "wsj0-mix-var" / "Multi-Decoder-DPRNN"
+            
+            if not model_dir.exists():
+                raise RuntimeError(f"MultiDecoder DPRNN model directory not found: {model_dir}")
+            
+            sys.path.insert(0, str(model_dir))
+            
+            # Patch torch.load to allow pickle
+            original_load = torch.load
+            torch.load = partial(original_load, weights_only=False)
+            
+            print("  Loading MultiDecoder DPRNN...")
+            from model import MultiDecoderDPRNN
+            self.separator = MultiDecoderDPRNN.from_pretrained("JunzheJosephZhu/MultiDecoderDPRNN").eval()
+            
+            # Restore torch.load
+            torch.load = original_load
+            
+            print(f"  ✓ MultiDecoder DPRNN loaded (variable sources)")
+            self.separator_type = "multidecoder"
+            
         except Exception as e:
-            raise RuntimeError(f"Cannot load source separation model: {e}")
+            raise RuntimeError(f"Cannot load MultiDecoder DPRNN: {e}")
         
         if not self.gender_venv_path.exists():
             raise RuntimeError(f"Gender detector venv not found: {self.gender_venv_path}")
@@ -146,67 +168,30 @@ class AIVoiceSeparator:
     
     def _separate_sources(self, input_audio: str, temp_dir: str) -> List[SpeakerProfile]:
         """
-        Stage 1: Recursive source separation with quality validation.
-        - If < 3 sources: Return as-is
-        - If = 3 sources: Re-separate each (may contain more speakers)
-        - Max depth: 1 re-separation level
+        Voice separation without recursion.
         
         Args:
             input_audio: Path to input audio file
-            temp_dir: Temporary directory for intermediate files
+            temp_dir: Temporary directory
             
         Returns:
-            Flat list of all detected speakers with renumbered IDs
+            List of all detected speakers
         """
         print(f"Input: {input_audio}")
         
-        # Initial separation
-        speakers = self._perform_separation(input_audio, temp_dir, depth=0)
+        # Single-pass separation
+        all_speakers = self._perform_separation(input_audio, temp_dir, depth=0)
         
-        if not speakers:
+        if not all_speakers:
             print("  ✗ No valid sources detected")
             return []
         
-        # If exactly 3 sources, attempt re-separation
-        if len(speakers) == 3:
-            print(f"\n  ⚠ Exactly 3 sources detected - checking for additional speakers...")
-            all_speakers = []
-            speaker_id = 1
-            
-            for idx, speaker in enumerate(speakers, 1):
-                print(f"\n  [{idx}/3] Re-separating Source {speaker.id}...")
-                
-                try:
-                    sub_speakers = self._perform_separation(speaker.audio_path, temp_dir, depth=1)
-                    
-                    # Decision: Use sub-separation only if it found < 3 sources
-                    if len(sub_speakers) < 3:
-                        # Keep original (sub-separation likely over-split)
-                        speaker.id = speaker_id
-                        all_speakers.append(speaker)
-                        speaker_id += 1
-                        print(f"      → Kept original (sub-separation: {len(sub_speakers)} sources)")
-                    else:
-                        # Use sub-separated sources
-                        for sub in sub_speakers:
-                            sub.id = speaker_id
-                            all_speakers.append(sub)
-                            speaker_id += 1
-                        print(f"      → Used {len(sub_speakers)} sub-sources")
-                        
-                except Exception as e:
-                    print(f"      ✗ Re-separation failed: {e}")
-                    # Fallback: keep original
-                    speaker.id = speaker_id
-                    all_speakers.append(speaker)
-                    speaker_id += 1
-            
-            print(f"\n  ✓ Final: {len(all_speakers)} speaker(s) detected")
-            return all_speakers
+        # Renumber speakers sequentially
+        for idx, speaker in enumerate(all_speakers, 1):
+            speaker.id = idx
         
-        # < 3 sources: return as-is
-        print(f"  ✓ {len(speakers)} speaker(s) detected (no re-separation needed)")
-        return speakers
+        print(f"\n  ✓ Final: {len(all_speakers)} speaker(s) detected")
+        return all_speakers
     
     def _perform_separation(self, input_audio: str, temp_dir: str, depth: int) -> List[SpeakerProfile]:
         """
@@ -233,22 +218,19 @@ class AIVoiceSeparator:
             print(f"{indent}✗ Audio load failed: {e}")
             return []
         
-        # Convert to tensor
+        # Convert to tensor and ensure mono
         if len(y.shape) == 1:
-            audio = torch.from_numpy(y).float().unsqueeze(0)
+            audio = torch.from_numpy(y).float()  # (samples,)
         else:
-            audio = torch.from_numpy(y.T).float()
+            # Stereo to mono: average channels
+            audio = torch.from_numpy(y).float().mean(dim=1)  # (samples,)
         
         if depth == 0:
-            print(f"{indent}Loaded: {sr}Hz, {audio.shape[-1]} samples ({audio.shape[-1]/sr:.2f}s)")
+            print(f"{indent}Loaded: {sr}Hz, {audio.shape[0]} samples ({audio.shape[0]/sr:.2f}s)")
         
         # ====================================================================
         # Preprocessing
         # ====================================================================
-        # Mono conversion
-        if audio.shape[0] > 1:
-            audio = audio.mean(dim=0, keepdim=True)
-        
         # Normalize to prevent clipping
         max_val = audio.abs().max()
         if max_val > 1e-8:
@@ -261,25 +243,29 @@ class AIVoiceSeparator:
         target_sr = 8000
         if sr != target_sr:
             resampler = torchaudio.transforms.Resample(sr, target_sr)
-            audio = resampler(audio)
+            audio = resampler(audio.unsqueeze(0)).squeeze(0)  # Add/remove channel for resampling
             sr = target_sr
+        
+        # Add batch dimension: (samples,) -> (1, samples)
+        mixture = audio.unsqueeze(0)
         
         # ====================================================================
         # Separation
         # ====================================================================
         try:
             with torch.no_grad():
-                separated = self.separator.separate_batch(audio)
+                # MultiDecoder DPRNN expects (batch, samples)
+                sources_est = self.separator.separate(mixture).cpu()
+                # sources_est is a list of tensors, each (samples,)
+                separated = torch.stack([s for s in sources_est], dim=0)  # (n_sources, samples)
+                    
         except Exception as e:
             print(f"{indent}✗ Separation failed: {e}")
+            import traceback
+            traceback.print_exc()
             return []
         
-        # Handle output shape variations
-        if len(separated.shape) == 3:
-            if separated.shape[1] > separated.shape[2]:
-                separated = separated.transpose(1, 2)
-        
-        num_sources = separated.shape[1]
+        num_sources = separated.shape[0]
         print(f"{indent}→ {num_sources} source(s)")
         
         # ====================================================================
@@ -296,7 +282,7 @@ class AIVoiceSeparator:
         }
         
         for i in range(num_sources):
-            source = separated[0, i, :]
+            source = separated[i]
             
             # Quality metrics
             max_amp = source.abs().max().item()
@@ -396,7 +382,7 @@ else:
             
             if result.returncode != 0:
                 print(f"    [Gender] ✗ Error: {result.stderr}")
-                return 'unknown', 0.0
+                raise RuntimeError(f"Gender classification failed: {result.stderr}")
             
             # Parse output: "gender|confidence"
             output = result.stdout.strip().split('\n')[-1]  # Last line
@@ -409,14 +395,14 @@ else:
                 return gender, confidence
             else:
                 print(f"    [Gender] ✗ Unexpected output: {output}")
-                return 'unknown', 0.0
+                raise RuntimeError(f"Gender classification output parse error: {output}")
                 
         except subprocess.TimeoutExpired:
             print(f"    [Gender] ✗ Timeout (>30s)")
-            return 'unknown', 0.0
+            raise RuntimeError("Gender classification timeout")
         except Exception as e:
             print(f"    [Gender] ✗ Error: {e}")
-            return 'unknown', 0.0
+            raise
     
     def _classify_age(self, audio_tensor: torch.Tensor, sr: int) -> Tuple[str, float]:
         """
@@ -516,13 +502,9 @@ else:
             return language_id, confidence
             
         except Exception as e:
-            print(f"    [Language] Error extracting predictions: {e}")
+            print(f"    [Language] ✗ Error extracting predictions: {e}")
             print(f"    [Language] Predictions structure: {[type(p) for p in predictions]}")
-            # Fallback: return first language with lower confidence
-            language_id = str(predictions[3][0]) if len(predictions) > 3 else 'unknown'
-            confidence = 50.0
-            print(f"    [Language] Fallback result: {language_id.upper()} (confidence: {confidence:.1f}%)")
-            return language_id, confidence
+            raise RuntimeError(f"Language classification failed: {e}")
     
     def _save_outputs(self, speakers: List[SpeakerProfile], output_dir: str):
         """
