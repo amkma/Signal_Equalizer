@@ -17,10 +17,19 @@
           <span>Equalizer</span>
           <span id="eq-mode-label"></span>
       </div>
-      <div style="display:flex; gap:10px;">
-          <button id="btn-ai-panel" style="font-size:13px; font-weight:600; padding:6px 12px; background:#333; border:1px solid #555; border-radius:4px; color:#fff; cursor:pointer; display:none;">
-            AI Models
-          </button>
+      <div style="display:flex; gap:10px; align-items: center;">
+          <div id="ai-switch-container" class="ai-switch-wrapper" style="display:none;">
+            <div class="ai-switch">
+              <input type="radio" id="mode-custom" name="ai_mode_switch" value="custom" checked>
+              <label for="mode-custom">Custom</label>
+
+              <input type="radio" id="mode-ai" name="ai_mode_switch" value="ai">
+              <label for="mode-ai">AI-Model</label>
+
+              <div class="switch-selection"></div>
+            </div>
+          </div>
+
           <button id="btn-reset-eq" style="font-size:13px; font-weight:600; padding:6px 12px; background:#333; border:1px solid #555; border-radius:4px; color:#fff; cursor:pointer;">
             Reset
           </button>
@@ -74,7 +83,7 @@
           <option value="voices">VoiceSeparator</option>
         </select>
       </label>
-      <button id="btn-run-ai" class="btn-primary">Run AI on input</button>
+      <button id="btn-run-ai" class="btn-primary" style="display:none;">Run AI on input</button>
     </div>
     <div id="ai-sliders" class="sliders"></div>
     <div id="ai-outputs" class="ai-outputs"></div>

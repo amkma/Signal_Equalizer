@@ -1,3 +1,5 @@
+/* static/css/style.css */
+
 /* === Advanced UI Theme - Instagram Inspired === */
 /* [1] Root Variables & Global Styles */
 :root {
@@ -50,18 +52,14 @@ canvas {
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
 }
 
-/* CRITICAL: Fixed height for main panels to ensure perfect alignment */
+/* Fixed height for main panels to ensure perfect alignment */
 .left-panel, .center-panel, .right-panel {
   background: var(--panel-bg);
   border: 1px solid var(--border-color);
   border-radius: 12px;
   padding: 16px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
-
-  /* Fixed Height Calculation: 320px (Canvas) + ~50px (Header) + 32px (Padding) + Margins */
   height: 420px;
-
-  /* Flex container to handle internal scrolling */
   display: flex;
   flex-direction: column;
 }
@@ -76,7 +74,6 @@ canvas {
   flex-shrink: 0;
 }
 
-/* Header Row Layout for Spectrum Panel */
 .panel-header-row {
   display: flex;
   justify-content: space-between;
@@ -223,21 +220,17 @@ button:disabled, button[disabled] {
   margin-top: 20px; padding: 16px;
 }
 
-/* [7] Sliders - SCROLLABLE AREA */
+/* [7] Sliders */
 .sliders {
     display: flex;
     flex-direction: column;
     gap: 12px;
     margin-top: 16px;
-
-    /* Takes remaining height in the fixed 420px panel */
     flex: 1;
-    /* Enables vertical scrollbar when subbands exceed 2 (approx) */
     overflow-y: auto;
     min-height: 0;
 }
 
-/* Custom Scrollbar */
 .sliders::-webkit-scrollbar { width: 6px; }
 .sliders::-webkit-scrollbar-track { background: var(--bg-dark); border-radius: 3px; }
 .sliders::-webkit-scrollbar-thumb { background: var(--border-color); border-radius: 3px; }
@@ -248,7 +241,7 @@ button:disabled, button[disabled] {
   border: 1px solid var(--border-color);
   border-radius: 8px;
   padding: 12px;
-  flex-shrink: 0; /* Prevent rows from squishing */
+  flex-shrink: 0;
 }
 .sb-title { font-weight: 600; color: var(--text-light); margin-bottom: 10px; }
 .sb-gain { font-family: var(--font-mono); color: var(--primary); font-weight: 700; margin-left: 12px; }
@@ -275,11 +268,75 @@ input[type=range]::-webkit-slider-runnable-track {
   overflow: hidden;
 }
 
+/* === NEW: AI Switch Styles === */
+.ai-switch-wrapper {
+  display: flex;
+  align-items: center;
+}
+
+.ai-switch {
+  position: relative;
+  display: flex;
+  background-color: var(--bg-dark);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  padding: 2px;
+  overflow: hidden;
+  height: 32px;
+}
+
+.ai-switch input[type="radio"] {
+  display: none;
+}
+
+.ai-switch label {
+  position: relative;
+  z-index: 2;
+  padding: 0 12px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 26px;
+  cursor: pointer;
+  color: var(--text-muted);
+  transition: color 0.2s ease;
+  user-select: none;
+}
+
+.ai-switch input[type="radio"]:checked + label {
+  color: #fff;
+}
+
+.switch-selection {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  left: 2px;
+  width: 50%;
+  background: var(--primary);
+  border-radius: 4px;
+  z-index: 1;
+  transition: transform 0.3s cubic-bezier(0.4, 0.0, 0.2, 1);
+}
+
+/* Transform logic for the switch background */
+#mode-custom:checked ~ .switch-selection {
+  transform: translateX(0%);
+  width: calc(50% - 2px);
+}
+
+#mode-ai:checked ~ .switch-selection {
+  transform: translateX(100%);
+  width: calc(50% - 2px);
+  background: var(--insta-orange);
+}
+
+/* === Loading Bar === */
 .loader-bar {
   width: 100%; height: 4px;
   background: var(--insta-gradient);
   background-size: 200% auto;
   animation: loader-anim 1.2s linear infinite;
+  margin-top: 5px; /* Added margin for spacing under canvas */
 }
 .loader-bar.hidden { display: none; }
 @keyframes loader-anim { 0% { background-position: 0% 50%; } 100% { background-position: 200% 50%; } }
