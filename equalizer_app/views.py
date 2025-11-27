@@ -15,7 +15,8 @@ CONFIG_DIR = os.path.join(settings.BASE_DIR, "equalizer_app", "configs")
 os.makedirs(DATA_DIR, exist_ok=True)
 
 REG: Dict[str, dict] = {}
-
+#A global dictionary acting as a temporary database (RAM) to store the audio arrays
+# (input_x, output_x) associated with a user's session ID (sid).
 
 def _resp_json(data: dict):
     buf = json.dumps(data).encode("utf-8")
@@ -449,6 +450,8 @@ def equalize(request, sid):
             if fmax < fmin: fmin, fmax = fmax, fmin
             mask = (np.abs(freqs) >= fmin) & (np.abs(freqs) <= fmax)
             X[mask] *= gain
+        #mask:Identifies exactly which indices in the FFT array correspond to those frequencies.
+        #X[mask] *= gain: Multiplies the magnitude of those complex numbers.
 
     if mode == "generic":
         subs = body.get("subbands", [])
