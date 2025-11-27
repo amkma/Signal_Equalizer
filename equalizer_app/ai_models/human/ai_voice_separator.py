@@ -70,8 +70,9 @@ class AIVoiceSeparator:
         os.environ["SPEECHBRAIN_CACHE"] = str(self.models_dir)
         os.environ["HF_HUB_DISABLE_SYMLINKS"] = "1"
         
-        self.gender_detector_dir = Path(__file__).parent / "zz_inaspeech"
-        self.gender_venv_path = Path(__file__).parent.parent.parent / ".venvan" / ".inaspeechan_venv"
+        # Gender classification temporarily disabled
+        # self.gender_detector_dir = Path(__file__).parent / "zz_inaspeech"
+        # self.gender_venv_path = Path(__file__).parent.parent.parent / ".venvan" / ".inaspeechan_venv"
         
         self.separator = None
         self.age_model = None
@@ -109,10 +110,11 @@ class AIVoiceSeparator:
         except Exception as e:
             raise RuntimeError(f"Cannot load MultiDecoder DPRNN: {e}")
         
-        if not self.gender_venv_path.exists():
-            raise RuntimeError(f"Gender detector venv not found: {self.gender_venv_path}")
-        if not (self.gender_detector_dir / "gender_detector.py").exists():
-            raise RuntimeError("Gender detector script not found")
+        # Gender classification venv check disabled
+        # if not self.gender_venv_path.exists():
+        #     raise RuntimeError(f"Gender detector venv not found: {self.gender_venv_path}")
+        # if not (self.gender_detector_dir / "gender_detector.py").exists():
+        #     raise RuntimeError("Gender detector script not found")
         
         try:
             from transformers import Wav2Vec2ForSequenceClassification, Wav2Vec2FeatureExtractor
@@ -147,9 +149,10 @@ class AIVoiceSeparator:
                 return
             
             for speaker in speakers:
+                # Gender classification disabled
                 # gender, gender_conf = self._classify_gender(speaker.audio_path)
                 # speaker.characteristics['gender'] = gender
-               # speaker.characteristics['gender_confidence'] = gender_conf
+                # speaker.characteristics['gender_confidence'] = gender_conf
                 
                 age, age_conf = self._classify_age(speaker.audio_tensor, speaker.sample_rate)
                 speaker.characteristics['age'] = age
