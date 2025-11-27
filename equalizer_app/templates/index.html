@@ -11,16 +11,20 @@
 
 <main class="workspace">
 
-  <!-- Reduced Height to 600px (was 630px) to remove bottom gap -->
   <aside class="left-panel" style="height: 600px;">
     <div class="panel-title" style="display:flex; justify-content:space-between; align-items:center;">
       <div>
           <span>Equalizer</span>
           <span id="eq-mode-label"></span>
       </div>
-      <button id="btn-reset-eq" style="font-size:13px; font-weight:600; padding:6px 12px; background:#333; border:1px solid #555; border-radius:4px; color:#fff; cursor:pointer;">
-        Reset
-      </button>
+      <div style="display:flex; gap:10px;">
+          <button id="btn-ai-panel" style="font-size:13px; font-weight:600; padding:6px 12px; background:#333; border:1px solid #555; border-radius:4px; color:#fff; cursor:pointer; display:none;">
+            AI Models
+          </button>
+          <button id="btn-reset-eq" style="font-size:13px; font-weight:600; padding:6px 12px; background:#333; border:1px solid #555; border-radius:4px; color:#fff; cursor:pointer;">
+            Reset
+          </button>
+      </div>
     </div>
 
     <div id="generic-tools" class="tool-row single-line eq-btn-group">
@@ -35,7 +39,6 @@
     <div id="eq-sliders" class="sliders"></div>
   </aside>
 
-  <!-- Reduced Height to 600px (was 630px) to remove bottom gap -->
   <section class="center-panel" style="height: 600px;">
     <div class="panel-header-row">
         <div class="header-left">
@@ -62,7 +65,6 @@
     <div id="spectrum-loader" class="loader-bar hidden"></div>
   </section>
 
-  <!-- Reduced Height to 600px (was 630px) to remove bottom gap -->
   <aside id="ai-panel" class="right-panel hidden" style="height: 600px;">
     <div class="panel-title">AI Models</div>
     <div class="tool-row">

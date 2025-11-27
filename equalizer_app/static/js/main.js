@@ -62,7 +62,12 @@ const state = {
   selecting:false, selStartX:0, selEndX:0,
   rawSpecIn: null, rawSpecOut: null,
   inputSamples: [], outputSamples: [],
-  specInBitmap: null, specOutBitmap: null
+  specInBitmap: null, specOutBitmap: null,
+
+  // AI State
+  aiMode: false,
+  aiStems: [],
+  stemGains: {}
 };
 
 const redPalette = [
@@ -117,6 +122,24 @@ function setGlobalState(enabled) {
     });
 }
 
+// ---------- Helper: AI Button Visibility ----------
+function updateAIVisibility(mode) {
+    if(!btnAIPanel) return;
+    if(mode === 'music' || mode === 'human') {
+        btnAIPanel.style.display = 'block';
+    } else {
+        btnAIPanel.style.display = 'none';
+        state.aiMode = false; // Reset AI mode if we switch away
+        // Also hide the panel if we switch to a mode that doesn't support it
+        const p = firstSel("#ai-panel");
+        const w = firstSel(".workspace");
+        if(p && !p.classList.contains("hidden")) {
+            p.classList.add("hidden");
+            if(w) w.classList.remove("ai-visible");
+        }
+    }
+}
+
 // ---------- File Upload Logic ----------
 function bindUpload(){
   if(dropZone){
@@ -139,6 +162,7 @@ async function doUploadFile(file){
 
     state.signalId = j.signal_id; state.sr = j.sr;
     state.duration = j.duration; state.nSamples = j.n;
+    state.aiMode = false; // Reset AI on new upload
 
     setStatus(`Loaded ${j.file_name} — sr=${j.sr}Hz, len=${j.duration.toFixed(2)}s`);
 
@@ -392,7 +416,7 @@ async function refreshAll(){
   drawWavePreview(inputCanvas, inCtx, jWaves.input, 0);
   drawWavePreview(outputCanvas, outCtx, jWaves.output, 0);
 
-  renderEqSliders();
+  if(!state.aiMode) renderEqSliders(); // Only render standard EQ if not in AI mode
   await refreshSpectrograms();
   if(spectrumLoader) spectrumLoader.classList.add("hidden");
 }
@@ -440,6 +464,69 @@ function bindSpectrumSelection(){
 function renderEqSliders(){
   if(state.mode === 'generic'){ renderGenericSubbands(); $('#generic-tools').style.display = 'flex'; }
   else { renderCustomizedSliders(); $('#generic-tools').style.display = 'none'; }
+}
+
+// ---------- AI SLIDERS LOGIC ----------
+async function runAI() {
+    if(!state.signalId) return alert("Upload a signal first");
+
+    setStatus("Running AI Separation (this may take a moment)...");
+    if(spectrumLoader) spectrumLoader.classList.remove("hidden");
+
+    try {
+        const resp = await apiPost(`/api/run_ai/${state.signalId}/`, {mode: state.mode});
+        if(resp.status === "ok") {
+            state.aiMode = true;
+            state.aiStems = resp.stems; // ["vocals", "drums", ...]
+            state.stemGains = {};
+
+            // Default full volume
+            resp.stems.forEach(s => state.stemGains[s] = 1.0);
+
+            renderAISliders();
+            setStatus("AI Separation Complete. Stems available.");
+        } else {
+            setStatus(`AI Error: ${resp.message}`);
+            alert("AI Error: " + resp.message);
+        }
+    } catch(err) {
+        console.error(err);
+        setStatus("AI Failed to run.");
+    } finally {
+        if(spectrumLoader) spectrumLoader.classList.add("hidden");
+    }
+}
+
+function renderAISliders() {
+    if(!eqPanel) return; eqPanel.innerHTML = "";
+    $('#generic-tools').style.display = 'none';
+
+    const title = document.createElement("div");
+    title.innerHTML = "<h3 style='color:var(--text-light); margin-bottom:10px;'>AI Mixer</h3>";
+    eqPanel.appendChild(title);
+
+    state.aiStems.forEach(stem => {
+        const row = document.createElement("div"); row.className = "sb-row";
+        const capStem = stem.charAt(0).toUpperCase() + stem.slice(1);
+
+        row.innerHTML = `
+            <div class="sb-title">${capStem} Volume</div>
+            <input type="range" min="0" max="100" step="1" value="${state.stemGains[stem]*100}" data-stem="${stem}"/>
+            <span class="sb-gain">${(state.stemGains[stem]*100).toFixed(0)}%</span>
+        `;
+        eqPanel.appendChild(row);
+    });
+
+    eqPanel.oninput = async (e) => {
+        const r = e.target;
+        if(r.tagName === "INPUT" && r.dataset.stem) {
+            const stem = r.dataset.stem;
+            const val = +r.value;
+            state.stemGains[stem] = val / 100.0;
+            r.parentElement.querySelector(".sb-gain").textContent = `${val}%`;
+            await applyEqualizerDebounced();
+        }
+    };
 }
 
 function renderGenericSubbands(){
@@ -500,21 +587,54 @@ async function renderCustomizedSliders(){
 
 let eqTimer=null;
 async function applyEqualizerDebounced(){ if(eqTimer) clearTimeout(eqTimer); eqTimer=setTimeout(applyEqualizer,120); }
+
 async function applyEqualizer(){
   if(!state.signalId) return;
-  const payload = state.mode==="generic" ? {mode:"generic", subbands:state.subbands} : {mode:state.mode, sliders:state.customSliders};
-  try{ if(spectrumLoader) spectrumLoader.classList.remove("hidden"); await apiPost(`/api/equalize/${state.signalId}/`, payload); await refreshOutputs(); }
-  catch(err){ console.error(err); setStatus(`Equalize error: ${err.message}`); if(spectrumLoader) spectrumLoader.classList.add("hidden"); }
+
+  let payload = {};
+
+  if (state.aiMode) {
+      // AI Mixing Mode Payload
+      payload = {
+          mode: "ai_mix",
+          gains: state.stemGains
+      };
+  } else {
+      // Standard EQ Payload
+      payload = state.mode==="generic"
+        ? {mode:"generic", subbands:state.subbands}
+        : {mode:state.mode, sliders:state.customSliders};
+  }
+
+  try{
+      if(spectrumLoader) spectrumLoader.classList.remove("hidden");
+      await apiPost(`/api/equalize/${state.signalId}/`, payload);
+      await refreshOutputs();
+  }
+  catch(err){
+      console.error(err);
+      setStatus(`Equalize error: ${err.message}`);
+      if(spectrumLoader) spectrumLoader.classList.add("hidden");
+  }
 }
 
 function bindToggles(){
   if(btnResetEq) btnResetEq.addEventListener("click", async () => {
     if(!state.signalId) return;
-    const target = state.mode === 'generic' ? state.subbands : state.customSliders;
-    if(target && target.length > 0) {
-        target.forEach(s => s.gain = 1.0);
-        renderEqSliders();
+
+    if(state.aiMode) {
+        // Reset Volume Mixers to 100%
+        Object.keys(state.stemGains).forEach(k => state.stemGains[k] = 1.0);
+        renderAISliders();
         await applyEqualizer();
+    } else {
+        // Existing Reset Logic
+        const target = state.mode === 'generic' ? state.subbands : state.customSliders;
+        if(target && target.length > 0) {
+            target.forEach(s => s.gain = 1.0);
+            renderEqSliders();
+            await applyEqualizer();
+        }
     }
   });
 
@@ -522,16 +642,39 @@ function bindToggles(){
       if(state.mode !== 'generic' || !state.signalId) return;
       state.subbands = []; renderEqSliders(); if(state.spectrumMags) drawSpectrum(state.spectrumMags, state.fmax, spectrumCanvas, spectrumCtx); await applyEqualizer();
   });
-  if(modeSelect) modeSelect.addEventListener("change", async e => { state.mode = e.target.value; state.subbands=[]; state.customSliders=[]; renderEqSliders(); if(state.signalId) await applyEqualizer(); });
+
+  if(modeSelect) modeSelect.addEventListener("change", async e => {
+      state.mode = e.target.value;
+      state.subbands=[];
+      state.customSliders=[];
+      state.aiMode = false; // Reset AI mode when switching modes
+
+      updateAIVisibility(state.mode);
+
+      if(state.mode !== 'generic') {
+          await renderCustomizedSliders();
+      } else {
+          renderEqSliders();
+      }
+
+      if(state.signalId) await applyEqualizer();
+  });
+
   if(toggleAudiogram) toggleAudiogram.addEventListener("change", e => { state.scale = e.target.checked ? "audiogram" : "linear"; if(state.signalId) refreshOutputs(); else if(state.spectrumMags) drawSpectrum(state.spectrumMags, state.fmax, spectrumCanvas, spectrumCtx); });
   if(toggleBackend) toggleBackend.addEventListener("change", e => { state.fftBackend = e.target.checked ? "cpp" : "numpy"; if(state.signalId) refreshOutputs(); });
+
+  // Updated AI Panel Toggle Handler
+  if(btnAIPanel) btnAIPanel.addEventListener("click", () => {
+      // Run AI Logic instead of opening panel
+      runAI();
+  });
 }
 
 function bindSaveLoad(){
   if(btnSaveScheme) btnSaveScheme.addEventListener("click", async ()=>{ if(!state.signalId) return alert("Upload a signal first."); const scheme = state.mode==="generic" ? {mode:"generic", subbands:state.subbands} : {mode:state.mode, sliders:state.customSliders}; const buf = await apiPost(`/api/save_scheme/${state.signalId}/`, scheme); const j = typeof buf==="object" ? buf : JSON.parse(new TextDecoder().decode(buf)); downloadBlob(new TextEncoder().encode(JSON.stringify(j.data,null,2)), j.filename, "application/json"); });
   if(fileInput) fileInput.addEventListener("change", (e) => { const f = e.target.files?.[0]; if(f) doUploadFile(f); });
   const fileSchemeInput = firstSel("#file-scheme");
-  if(fileSchemeInput) fileSchemeInput.addEventListener("change", async (e)=>{ const f = e.target.files?.[0]; if(!f) return; const data = JSON.parse(await f.text()); await apiPost(`/api/load_scheme/${state.signalId}/`, data); state.mode=data.mode||"generic"; state.subbands=data.subbands||[]; state.customSliders=data.sliders||[]; if(modeSelect) modeSelect.value=state.mode; renderEqSliders(); await applyEqualizer(); });
+  if(fileSchemeInput) fileSchemeInput.addEventListener("change", async (e)=>{ const f = e.target.files?.[0]; if(!f) return; const data = JSON.parse(await f.text()); await apiPost(`/api/load_scheme/${state.signalId}/`, data); state.mode=data.mode||"generic"; state.subbands=data.subbands||[]; state.customSliders=data.sliders||[]; if(modeSelect) modeSelect.value=state.mode; updateAIVisibility(state.mode); renderEqSliders(); await applyEqualizer(); });
 }
 
 function bindCanvasSeeking() {

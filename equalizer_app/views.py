@@ -7,6 +7,7 @@ from django.conf import settings
 import numpy as np
 from .utils.fft import fft_radix2, ifft_radix2, stft_spectrogram
 from .utils.fft_bridge import fft_cpp
+from .ai_models.orchestrator import AIOrchestrator
 
 MEDIA_ROOT = getattr(settings, "MEDIA_ROOT", os.path.join(settings.BASE_DIR, "media"))
 DATA_DIR = os.path.join(MEDIA_ROOT, "signals")
@@ -102,6 +103,8 @@ def upload_signal(request):
         "custom_sliders": [],
         "scale": "linear",
         "show_spec": True,
+        "stem_data": {},  # To store AI stems
+        "ai_active": False
     }
     _make_output_for_signal(sid)
     return _resp_json(
@@ -118,7 +121,7 @@ def summary(request, sid):
 def _compute_spectrum(x: np.ndarray, sr: int, scale: str, backend: str):
     VISUAL_POINTS = 2000
 
-    # 1. Windowing (Fixes spectral leakage/spikiness)
+    # 1. Windowing
     window = np.hanning(len(x))
     x_windowed = x * window
 
@@ -133,8 +136,7 @@ def _compute_spectrum(x: np.ndarray, sr: int, scale: str, backend: str):
         X = np.fft.fft(x_windowed)
         mag = np.abs(X[:len(X) // 2])
 
-    # 2. Remove DC Offset (Index 0) - CRITICAL FIX
-    # Large DC offsets squash the rest of the graph when normalized.
+    # 2. Remove DC Offset
     if len(mag) > 0:
         mag[0] = 0
 
@@ -145,22 +147,17 @@ def _compute_spectrum(x: np.ndarray, sr: int, scale: str, backend: str):
 
     # 4. Visibility Scaling
     if scale == "audiogram":
-        # dB Scale
         mag_db = 20 * np.log10(mag + 1e-9)
         min_db = -80.0
         mag = (mag_db - min_db) / (0 - min_db)
         mag = np.clip(mag, 0, 1)
     else:
-        # "Linear" Mode Enhanced
-        # Use Square Root compression to lift high frequencies/low amplitudes
-        # so they are visible, while keeping the 0-1 range.
         mag = np.sqrt(mag)
 
-    # 5. Smooth Downsampling (Binning)
+    # 5. Smooth Downsampling
     if len(mag) > VISUAL_POINTS:
         step = len(mag) // VISUAL_POINTS
         cutoff = step * VISUAL_POINTS
-        # Average chunks instead of skipping
         mag = mag[:cutoff].reshape(-1, step).mean(axis=1)
 
     return mag.tolist(), float(sr / 2.0)
@@ -197,9 +194,7 @@ def spectrograms(request, sid):
 
     import PIL.Image as Image
     def process_and_encode(S):
-        # Remove DC from Spectrogram too
         if S.shape[0] > 0: S[0, :] = 0
-
         S_log = np.log1p(S * 1000)
         s_min, s_max = S_log.min(), S_log.max()
         S_norm = (S_log - s_min) / (s_max - s_min) if (s_max - s_min > 1e-12) else np.zeros_like(S_log)
@@ -237,6 +232,48 @@ def custom_conf(request, sid):
 
 
 @csrf_exempt
+def run_ai(request, sid):
+    if request.method != "POST": return HttpResponseBadRequest("POST only")
+    meta = REG.get(sid)
+    if not meta: return HttpResponseBadRequest("Invalid id")
+
+    body = json.loads(request.body.decode("utf-8"))
+    mode = body.get("mode", "music")
+
+    # Check specifically for Music mode
+    if mode == "music":
+        input_path = os.path.join(DATA_DIR, sid, meta["file_name"])
+        output_dir = os.path.join(DATA_DIR, sid, "stems")
+
+        orchestrator = AIOrchestrator()
+        try:
+            # Run separation
+            result = orchestrator.separate_music(input_path, output_dir)
+
+            # Cache stem data in RAM for real-time mixing
+            meta["stem_data"] = {}
+            stem_names = []
+
+            stems_map = result.get("stems", {})
+            for name, path in stems_map.items():
+                if os.path.exists(path):
+                    with open(path, "rb") as f:
+                        _, x = _read_wav(f)
+                    meta["stem_data"][name] = x.astype(np.float32)
+                    stem_names.append(name)
+
+            meta["ai_active"] = True
+            return _resp_json({"status": "ok", "stems": stem_names})
+
+        except Exception as e:
+            print(f"AI Separation Error: {e}")
+            return _resp_json({"status": "error", "message": str(e)})
+
+    return _resp_json(
+        {"status": "error", "message": "Only Music mode is currently supported for specific stem separation"})
+
+
+@csrf_exempt
 def equalize(request, sid):
     if request.method != "POST": return HttpResponseBadRequest("POST only")
     meta = REG.get(sid)
@@ -245,6 +282,27 @@ def equalize(request, sid):
     mode = body.get("mode", "generic")
     sr = meta["sr"]
 
+    # === AI MIXING MODE ===
+    if mode == "ai_mix":
+        gains = body.get("gains", {})
+        stems = meta.get("stem_data", {})
+
+        # Start with empty buffer matching input length
+        base_len = len(meta["input_x"])
+        mixed_signal = np.zeros(base_len, dtype=np.float32)
+
+        for stem_name, stem_arr in stems.items():
+            gain = float(gains.get(stem_name, 0.0))
+            if gain > 0:
+                # Safe addition ensuring lengths match
+                l = min(len(mixed_signal), len(stem_arr))
+                mixed_signal[:l] += stem_arr[:l] * gain
+
+        REG[sid]["output_x"] = mixed_signal
+        _make_output_for_signal(sid)
+        return _resp_json({"ok": True})
+
+    # === STANDARD EQ MODE ===
     xz = meta["input_x"]
     n = xz.size
     n2 = _next_pow2(n)
