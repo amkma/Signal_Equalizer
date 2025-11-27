@@ -10,14 +10,14 @@
     "name": "Female Voice",
     "gain": 1.0,
     "windows": [
-      {"fmin": 165, "fmax": 255}
+      {"fmin": 175, "fmax": 260}
     ]
   },
   {
     "name": "Child Voice",
     "gain": 1.0,
     "windows": [
-      {"fmin": 250, "fmax": 600}
+      {"fmin": 300, "fmax": 800}
     ]
   },
   {

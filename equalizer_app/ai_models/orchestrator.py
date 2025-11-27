@@ -101,7 +101,7 @@ def separate_music(audio_path: str, output_dir: str, model: str = "spleeter:4ste
 
 if __name__ == "__main__":
     orchy = AIOrchestrator()
-    orchy.separate_human_voices(r"C:\Users\amkma\Desktop\speeches\speeches\chinese_001.wav",
-                                r"C:\Users\amkma\Desktop\speeches\ai_separated\chinesan")
-    orchy.separate_music(r"C:\Users\amkma\Desktop\speeches\songan\el_gawdan.mp3",
-                         r"C:\Users\amkma\Desktop\speeches\songan\gawdan")
+    orchy.separate_human_voices(r"C:\Users\amkma\Desktop\naknan\test_01.wav",
+                                r"C:\Users\amkma\Desktop\separated_sources")
+    # orchy.separate_music(r"C:\Users\amkma\Desktop\505.wav",
+    #                      r"C:\Users\amkma\Desktop\testy")

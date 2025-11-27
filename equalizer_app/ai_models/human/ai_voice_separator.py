@@ -276,9 +276,9 @@ class AIVoiceSeparator:
         
         speakers = []
         quality_thresholds = {
-            'min_amplitude': 0.01,
-            'min_energy': 0.0001,
-            'min_duration': 0.5  # seconds
+            'min_amplitude': 0.05,
+            'min_energy': 0.0005,
+            'min_duration': 1.0  # seconds
         }
         
         for i in range(num_sources):
