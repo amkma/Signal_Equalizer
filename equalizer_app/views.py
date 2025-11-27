@@ -442,6 +442,7 @@ def equalize(request, sid):
     except:
         X = np.fft.fft(padded_x)
 
+
     freqs = np.fft.fftfreq(n2, d=1.0 / sr)
 
     def apply_windows(windows, gain):
