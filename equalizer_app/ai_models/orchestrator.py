@@ -2,7 +2,19 @@ import subprocess
 import json
 from pathlib import Path
 from typing import Dict
+import sys
+import os
 
+# Force UTF-8 encoding for stdout (fixes Windows console Unicode issues)
+if sys.platform == 'win32':
+    import io
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
+
+from pathlib import Path
+from dataclasses import dataclass
+from typing import List, Dict, Tuple
+from functools import partial
 
 class AIOrchestrator:
     def __init__(self):
@@ -25,8 +37,8 @@ class AIOrchestrator:
             raise RuntimeError(f"Music script not found: {self.music_script}")
 
     def separate_human_voices(self, audio_path: str, output_dir: str) -> Dict:
-        if not Path(audio_path).exists():
-            raise FileNotFoundError(f"Audio file not found: {audio_path}")
+        # if not Path(audio_path).exists():
+        #     raise FileNotFoundError(f"Audio file not found: {audio_path}")
         
         Path(output_dir).mkdir(parents=True, exist_ok=True)
         python_exe = self.human_venv / "Scripts" / "python.exe"
@@ -101,7 +113,7 @@ def separate_music(audio_path: str, output_dir: str, model: str = "spleeter:4ste
 
 if __name__ == "__main__":
     orchy = AIOrchestrator()
-    orchy.separate_human_voices(r"C:\Users\amkma\Desktop\naknan\test_01.wav",
-                                r"C:\Users\amkma\Desktop\separated_sources")
-    # orchy.separate_music(r"C:\Users\amkma\Desktop\505.wav",
-    #                      r"C:\Users\amkma\Desktop\testy")
+    orchy.separate_human_voices(r"C:\Users\user\Desktop\mixture.wav",
+                                r"C:\Users\user\Desktop\test_human_output")
+    # orchy.separate_music(r"C:\Users\user\Desktop\505.wav",
+    #                      r"C:\Users\user\Desktop\test_music_output")

@@ -240,17 +240,16 @@ def run_ai(request, sid):
     body = json.loads(request.body.decode("utf-8"))
     mode = body.get("mode", "music")
 
-    # Check specifically for Music mode
-    if mode == "music":
-        input_path = os.path.join(DATA_DIR, sid, meta["file_name"])
-        output_dir = os.path.join(DATA_DIR, sid, "stems")
+    orchestrator = AIOrchestrator()
+    input_path = os.path.join(DATA_DIR, sid, meta["file_name"])
 
-        orchestrator = AIOrchestrator()
-        try:
-            # Run separation
+    try:
+        # === MUSIC MODE ===
+        if mode == "music":
+            output_dir = os.path.join(DATA_DIR, sid, "stems")
             result = orchestrator.separate_music(input_path, output_dir)
 
-            # Cache stem data in RAM for real-time mixing
+            # Cache stem data in RAM
             meta["stem_data"] = {}
             stem_names = []
 
@@ -265,12 +264,70 @@ def run_ai(request, sid):
             meta["ai_active"] = True
             return _resp_json({"status": "ok", "stems": stem_names})
 
-        except Exception as e:
-            print(f"AI Separation Error: {e}")
-            return _resp_json({"status": "error", "message": str(e)})
+        # === HUMAN MODE (Speaker Separation) ===
+        elif mode == "human":
+            # Define the specific output directory as requested
+            output_dir = os.path.join(settings.BASE_DIR, "equalizer_app", "ai_models", "human", "output")
+
+            # === CLEANUP: Remove all files in this specific output directory before separation ===
+            if os.path.exists(output_dir):
+                for filename in os.listdir(output_dir):
+                    file_path = os.path.join(output_dir, filename)
+                    try:
+                        if os.path.isfile(file_path):
+                            os.unlink(file_path)
+                    except Exception as e:
+                        print(f"Error deleting old AI file {file_path}: {e}")
+            else:
+                os.makedirs(output_dir, exist_ok=True)
+
+            # Execute separation into the cleared directory
+            result = orchestrator.separate_human_voices(input_path, output_dir)
+
+            meta["stem_data"] = {}
+            stem_names = []
+
+            # Define the strictly required slider keys
+            target_speakers_map = {1: "speaker 1", 2: "speaker 2", 3: "speaker 3", 4: "speaker 4"}
+
+            # Map detected IDs to filenames from the orchestrator's metadata
+            detected_files = {}
+            if "speakers" in result:
+                for spk in result["speakers"]:
+                    detected_files[spk["id"]] = spk["filename"]
+
+            # Base buffer for silence (same length as input)
+            input_len = len(meta["input_x"])
+
+            # Populate exactly 4 stems, strictly reading from the specific output folder
+            for i in range(1, 5):
+                key = target_speakers_map[i]
+                stem_names.append(key)
+
+                if i in detected_files:
+                    fname = detected_files[i]
+                    fpath = os.path.join(output_dir, fname)
+
+                    if os.path.exists(fpath):
+                        with open(fpath, "rb") as f:
+                            _, x = _read_wav(f)
+                        meta["stem_data"][key] = x.astype(np.float32)
+                    else:
+                        # File reported but not found -> Silence
+                        meta["stem_data"][key] = np.zeros(input_len, dtype=np.float32)
+                else:
+                    # Speaker not detected -> Silence
+                    meta["stem_data"][key] = np.zeros(input_len, dtype=np.float32)
+
+            meta["ai_active"] = True
+            return _resp_json({"status": "ok", "stems": stem_names})
+
+    except Exception as e:
+        print(f"AI Separation Error: {e}")
+        return _resp_json({"status": "error", "message": str(e)})
 
     return _resp_json(
-        {"status": "error", "message": "Only Music mode is currently supported for specific stem separation"})
+        {"status": "error", "message": f"Mode '{mode}' not supported for AI separation"})
 
 
 @csrf_exempt
@@ -282,7 +339,7 @@ def equalize(request, sid):
     mode = body.get("mode", "generic")
     sr = meta["sr"]
 
-    # === AI MIXING MODE ===
+    # === AI MIXING MODE (Shared by Music and Human) ===
     if mode == "ai_mix":
         gains = body.get("gains", {})
         stems = meta.get("stem_data", {})
