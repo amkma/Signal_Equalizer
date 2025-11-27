@@ -3,28 +3,28 @@
     "name": "Vocals",
     "gain": 1.0,
     "windows": [
-      {"fmin": 200, "fmax": 3000}
+      {"fmin": 100, "fmax": 11000}
     ]
   },
   {
     "name": "Drums",
     "gain": 1.0,
     "windows": [
-      {"fmin": 50, "fmax": 800}
+      {"fmin": 0, "fmax": 11000}
     ]
   },
   {
     "name": "Bass",
     "gain": 1.0,
     "windows": [
-      {"fmin": 20, "fmax": 150}
+      {"fmin": 0, "fmax": 800}
     ]
   },
   {
     "name": "Others",
     "gain": 1.0,
     "windows": [
-      {"fmin": 300, "fmax": 10000}
+      {"fmin": 100, "fmax": 5000}
     ]
   }
 ]

@@ -34,14 +34,77 @@ def _write_wav(path, sr, x: np.ndarray):
 
 
 def _read_wav(fileobj):
-    with wave.open(fileobj, "rb") as wf:
-        nchan = wf.getnchannels()
-        sr = wf.getframerate()
-        n = wf.getnframes()
-        raw = wf.readframes(n)
-    x = np.frombuffer(raw, dtype=np.int16).astype(np.float32) / 32768.0
-    if nchan > 1: x = x.reshape(-1, nchan).mean(axis=1)
-    return sr, x
+    """
+    Robust WAV reader that handles both PCM (int16) and IEEE Float (float32).
+    Tries to use 'soundfile' library if available for best compatibility with AI outputs,
+    falls back to 'wave' module.
+    """
+    # 1. Try using soundfile (robust for float32/24bit/etc)
+    try:
+        import soundfile as sf
+        # Check if fileobj is a path string or file-like
+        is_path = isinstance(fileobj, (str, os.PathLike))
+
+        # sf.read supports both file paths and file objects
+        if is_path:
+            y, sr = sf.read(fileobj, dtype='float32')
+        else:
+            # Ensure we are at start of file if it's an open buffer
+            if hasattr(fileobj, 'seek'):
+                fileobj.seek(0)
+            y, sr = sf.read(fileobj, dtype='float32')
+
+        if y.ndim > 1:
+            y = y.mean(axis=1)  # Mixdown to mono
+        return int(sr), y.astype(np.float32)
+
+    except (ImportError, Exception) as e:
+        # 2. Fallback to standard wave module
+        if hasattr(fileobj, 'seek'):
+            fileobj.seek(0)
+
+        with wave.open(fileobj, "rb") as wf:
+            nchan = wf.getnchannels()
+            sr = wf.getframerate()
+            n = wf.getnframes()
+            width = wf.getsampwidth()
+            raw = wf.readframes(n)
+
+        # Handle different bit depths
+        if width == 2:  # 16-bit int
+            data = np.frombuffer(raw, dtype=np.int16).astype(np.float32) / 32768.0
+        elif width == 4:  # Likely 32-bit float (common in AI) or 32-bit int
+            # Try interpreting as float32 first (most common for 4-byte wavs from AI)
+            try:
+                data = np.frombuffer(raw, dtype=np.float32)
+            except:
+                data = np.frombuffer(raw, dtype=np.int32).astype(np.float32) / 2147483648.0
+        elif width == 1:  # 8-bit uint
+            data = (np.frombuffer(raw, dtype=np.uint8).astype(np.float32) - 128.0) / 128.0
+        else:
+            raise ValueError(f"Unsupported sample width: {width}")
+
+        if nchan > 1:
+            data = data.reshape(-1, nchan).mean(axis=1)
+
+        return int(sr), data.copy()
+
+
+def _resample_signal(x: np.ndarray, orig_sr: int, target_sr: int) -> np.ndarray:
+    """
+    Resamples signal x from orig_sr to target_sr using linear interpolation.
+    Needed because AI models output 16k/44.1k but project might be different.
+    """
+    if orig_sr == target_sr:
+        return x
+
+    duration = x.size / orig_sr
+    target_len = int(duration * target_sr)
+
+    x_indices = np.linspace(0, x.size - 1, num=target_len)
+    resampled = np.interp(x_indices, np.arange(x.size), x)
+
+    return resampled.astype(np.float32)
 
 
 def _downsample_preview(x: np.ndarray, target=2000):
@@ -80,6 +143,7 @@ def upload_signal(request):
     with open(orig_path, "wb") as fp:
         for chunk in f.chunks(): fp.write(chunk)
 
+    # Use robust reader
     with open(orig_path, "rb") as fp:
         sr, x = _read_wav(fp)
 
@@ -243,6 +307,9 @@ def run_ai(request, sid):
     orchestrator = AIOrchestrator()
     input_path = os.path.join(DATA_DIR, sid, meta["file_name"])
 
+    # Target Sample Rate (project SR)
+    target_sr = meta["sr"]
+
     try:
         # === MUSIC MODE ===
         if mode == "music":
@@ -256,9 +323,11 @@ def run_ai(request, sid):
             stems_map = result.get("stems", {})
             for name, path in stems_map.items():
                 if os.path.exists(path):
-                    with open(path, "rb") as f:
-                        _, x = _read_wav(f)
-                    meta["stem_data"][name] = x.astype(np.float32)
+                    # Use robust reader
+                    file_sr, x = _read_wav(path)
+                    # Resample if mismatch
+                    x = _resample_signal(x, file_sr, target_sr)
+                    meta["stem_data"][name] = x
                     stem_names.append(name)
 
             meta["ai_active"] = True
@@ -266,7 +335,7 @@ def run_ai(request, sid):
 
         # === HUMAN MODE (Speaker Separation) ===
         elif mode == "human":
-            # Define the specific output directory as requested
+            # Specific directory for output
             output_dir = os.path.join(settings.BASE_DIR, "equalizer_app", "ai_models", "human", "output")
 
             # === CLEANUP: Remove all files in this specific output directory before separation ===
@@ -281,7 +350,7 @@ def run_ai(request, sid):
             else:
                 os.makedirs(output_dir, exist_ok=True)
 
-            # Execute separation into the cleared directory
+            # Execute separation
             result = orchestrator.separate_human_voices(input_path, output_dir)
 
             meta["stem_data"] = {}
@@ -290,16 +359,16 @@ def run_ai(request, sid):
             # Define the strictly required slider keys
             target_speakers_map = {1: "speaker 1", 2: "speaker 2", 3: "speaker 3", 4: "speaker 4"}
 
-            # Map detected IDs to filenames from the orchestrator's metadata
+            # Map detected IDs to filenames
             detected_files = {}
             if "speakers" in result:
                 for spk in result["speakers"]:
                     detected_files[spk["id"]] = spk["filename"]
 
-            # Base buffer for silence (same length as input)
+            # Base buffer for silence (matches input length)
             input_len = len(meta["input_x"])
 
-            # Populate exactly 4 stems, strictly reading from the specific output folder
+            # Populate exactly 4 stems
             for i in range(1, 5):
                 key = target_speakers_map[i]
                 stem_names.append(key)
@@ -309,14 +378,14 @@ def run_ai(request, sid):
                     fpath = os.path.join(output_dir, fname)
 
                     if os.path.exists(fpath):
-                        with open(fpath, "rb") as f:
-                            _, x = _read_wav(f)
-                        meta["stem_data"][key] = x.astype(np.float32)
+                        # Use robust reader (handles float32/int16)
+                        file_sr, x = _read_wav(fpath)
+                        # Resample to match project SR (Fixes "strange" pitch/speed sound)
+                        x = _resample_signal(x, file_sr, target_sr)
+                        meta["stem_data"][key] = x
                     else:
-                        # File reported but not found -> Silence
                         meta["stem_data"][key] = np.zeros(input_len, dtype=np.float32)
                 else:
-                    # Speaker not detected -> Silence
                     meta["stem_data"][key] = np.zeros(input_len, dtype=np.float32)
 
             meta["ai_active"] = True

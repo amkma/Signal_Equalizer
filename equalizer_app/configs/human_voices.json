@@ -4,8 +4,8 @@
     "gain": 1.0,
     "windows": [
       {
-        "fmin": 50,
-        "fmax": 300
+        "fmin": 0,
+        "fmax": 5000
       }
     ]
   },
@@ -14,8 +14,8 @@
     "gain": 1.0,
     "windows": [
       {
-        "fmin": 300,
-        "fmax": 600
+        "fmin": 0,
+        "fmax": 3500
       }
     ]
   },
@@ -24,7 +24,7 @@
     "gain": 1.0,
     "windows": [
       {
-        "fmin": 600,
+        "fmin": 0,
         "fmax": 2000
       }
     ]
@@ -34,8 +34,8 @@
     "gain": 1.0,
     "windows": [
       {
-        "fmin": 2000,
-        "fmax": 16000
+        "fmin": 0,
+        "fmax": 4500
       }
     ]
   }
