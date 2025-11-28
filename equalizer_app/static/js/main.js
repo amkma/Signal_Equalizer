@@ -574,14 +574,29 @@ async function runAI() {
         if (resp.status === "ok") {
             state.aiMode = true;
             state.aiStems = resp.stems;
+            
+            // Initialize stem gains from current slider values if they exist
             state.stemGains = {};
-            resp.stems.forEach(s => state.stemGains[s] = 1.0);
+            resp.stems.forEach((stem, idx) => {
+                // Try to match stem name with existing slider
+                const slider = state.customSliders.find(s => 
+                    s.name.toLowerCase() === stem.toLowerCase() ||
+                    s.id === `custom${idx}`
+                );
+                if (slider) {
+                    // Preserve existing slider value
+                    state.stemGains[stem] = slider.gain;
+                } else {
+                    // Default to 1.0 (100%)
+                    state.stemGains[stem] = 1.0;
+                }
+            });
 
-            // Render AI controls
-            renderAISliders();
-
-            // Switch view to AI sliders
-            // (Note: The switch input is already set by the user click that triggered this)
+            // Update sliders to match stem names, preserving values
+            updateSlidersForAI();
+            
+            // Apply initial mix with stem gains and refresh
+            await applyEqualizer();
 
             setStatus("AI Separation Complete. Stems available.");
         } else {
@@ -602,27 +617,95 @@ async function runAI() {
     }
 }
 
-function renderAISliders() {
+function updateSlidersForAI() {
     if (!eqPanel) return;
-    eqPanel.innerHTML = "";
-    $('#generic-tools').style.display = 'none';
-    const title = document.createElement("div");
-    title.innerHTML = "<h3 style='color:var(--text-light); margin-bottom:10px;'>AI Mixer</h3>";
-    eqPanel.appendChild(title);
-    state.aiStems.forEach(stem => {
-        const row = document.createElement("div");
-        row.className = "sb-row";
-        const capStem = stem.charAt(0).toUpperCase() + stem.slice(1);
-        row.innerHTML = `<div class="sb-title">${capStem} Volume</div><input type="range" min="0" max="100" step="1" value="${state.stemGains[stem] * 100}" data-stem="${stem}"/><span class="sb-gain">${(state.stemGains[stem] * 100).toFixed(0)}%</span>`;
-        eqPanel.appendChild(row);
+    // Update slider labels and data attributes to match AI stems
+    // but preserve their current values
+    const sliderInputs = eqPanel.querySelectorAll('input[type="range"]');
+    
+    state.aiStems.forEach((stem, idx) => {
+        if (idx < sliderInputs.length) {
+            const input = sliderInputs[idx];
+            const row = input.closest('.sb-row');
+            if (row) {
+                const title = row.querySelector('.sb-title');
+                const gainDisplay = row.querySelector('.sb-gain');
+                const capStem = stem.charAt(0).toUpperCase() + stem.slice(1);
+                
+                if (title) title.textContent = capStem;
+                
+                // Update data attribute for AI processing
+                input.dataset.stem = stem;
+                delete input.dataset.id; // Remove custom ID
+                
+                // Preserve current value and sync stemGains
+                const currentValue = +input.value;
+                state.stemGains[stem] = currentValue / 100.0;
+                
+                if (gainDisplay) gainDisplay.textContent = `${currentValue.toFixed(0)}%`;
+            }
+        }
     });
+    
+    // Update event handler to work with stem data
+    updateSliderEventHandler();
+}
+
+function updateSlidersForCustom() {
+    if (!eqPanel) return;
+    // Restore custom slider labels and data attributes
+    const sliderInputs = eqPanel.querySelectorAll('input[type="range"]');
+    
+    state.customSliders.forEach((slider, idx) => {
+        if (idx < sliderInputs.length) {
+            const input = sliderInputs[idx];
+            const row = input.closest('.sb-row');
+            if (row) {
+                const title = row.querySelector('.sb-title');
+                const gainDisplay = row.querySelector('.sb-gain');
+                
+                if (title) title.textContent = slider.name;
+                
+                // Update data attribute for custom processing
+                input.dataset.id = slider.id;
+                delete input.dataset.stem; // Remove AI stem name
+                
+                // Sync slider gain from current value
+                const currentValue = +input.value;
+                slider.gain = currentValue / 100.0;
+                
+                if (gainDisplay) gainDisplay.textContent = `${currentValue.toFixed(0)}%`;
+            }
+        }
+    });
+    
+    // Update event handler to work with custom data
+    updateSliderEventHandler();
+}
+
+function updateSliderEventHandler() {
+    if (!eqPanel) return;
+    
+    // Set unified event handler that works for both modes
     eqPanel.oninput = async (e) => {
         const r = e.target;
-        if (r.tagName === "INPUT" && r.dataset.stem) {
-            const stem = r.dataset.stem;
+        if (r.tagName === "INPUT") {
             const val = +r.value;
-            state.stemGains[stem] = val / 100.0;
-            r.parentElement.querySelector(".sb-gain").textContent = `${val}%`;
+            
+            if (state.aiMode && r.dataset.stem) {
+                // AI mode - update stemGains
+                const stem = r.dataset.stem;
+                state.stemGains[stem] = val / 100.0;
+                r.parentElement.querySelector(".sb-gain").textContent = `${val}%`;
+            } else if (!state.aiMode && r.dataset.id) {
+                // Custom mode - update slider gain
+                const id = r.dataset.id;
+                const slider = state.customSliders.find(s => s.id === id);
+                if (slider) {
+                    slider.gain = val / 100.0;
+                    r.parentElement.querySelector(".sb-gain").textContent = `${val}%`;
+                }
+            }
             await applyEqualizerDebounced();
         }
     };
@@ -699,21 +782,14 @@ async function renderCustomizedSliders() {
             const row = document.createElement("div");
             row.className = "sb-row";
             slider.id = `custom${idx}`;
-            row.innerHTML = `<div class="sb-title">${slider.name}</div><input type="range" min="0" max="2" step="0.01" value="${slider.gain}" data-id="${slider.id}"/><span class="sb-gain">${slider.gain.toFixed(2)}x</span>`;
+            // Convert gain (0-2 multiplier) to percentage (0-100%) for display
+            const percentage = slider.gain * 100;
+            row.innerHTML = `<div class="sb-title">${slider.name}</div><input type="range" min="0" max="100" step="1" value="${percentage}" data-id="${slider.id}"/><span class="sb-gain">${percentage.toFixed(0)}%</span>`;
             eqPanel.appendChild(row);
         });
-        eqPanel.oninput = async (e) => {
-            const r = e.target;
-            if (r.tagName === "INPUT") {
-                const id = r.dataset.id;
-                const slider = state.customSliders.find(s => s.id === id);
-                if (slider) {
-                    slider.gain = +r.value;
-                    r.parentElement.querySelector(".sb-gain").textContent = `${slider.gain.toFixed(2)}x`;
-                    await applyEqualizerDebounced();
-                }
-            }
-        };
+        
+        // Set unified event handler
+        updateSliderEventHandler();
     } catch (err) {
         console.error(err);
     }
@@ -729,7 +805,9 @@ async function applyEqualizerDebounced() {
 async function applyEqualizer() {
     if (!state.signalId) return;
     let payload = {};
-    if (state.aiMode) {
+    
+    // Only use AI mode if we actually have stems
+    if (state.aiMode && state.aiStems.length > 0) {
         payload = {mode: "ai_mix", gains: state.stemGains};
     } else {
         payload = state.mode === "generic" ? {mode: "generic", subbands: state.subbands} : {
@@ -737,6 +815,7 @@ async function applyEqualizer() {
             sliders: state.customSliders
         };
     }
+    
     try {
         if (spectrumLoader) spectrumLoader.classList.remove("hidden");
         await apiPost(`/api/equalize/${state.signalId}/`, payload);
@@ -751,18 +830,27 @@ async function applyEqualizer() {
 function bindToggles() {
     if (btnResetEq) btnResetEq.addEventListener("click", async () => {
         if (!state.signalId) return;
-        if (state.aiMode) {
+        
+        // Reset all slider values to 100%
+        const sliderInputs = eqPanel.querySelectorAll('input[type="range"]');
+        sliderInputs.forEach(input => {
+            input.value = 100;
+            const gainDisplay = input.parentElement.querySelector('.sb-gain');
+            if (gainDisplay) gainDisplay.textContent = '100%';
+        });
+        
+        if (state.aiMode && state.aiStems.length > 0) {
+            // Reset AI stem gains
             Object.keys(state.stemGains).forEach(k => state.stemGains[k] = 1.0);
-            renderAISliders();
-            await applyEqualizer();
+        } else if (state.mode === 'generic') {
+            // Reset generic subbands
+            state.subbands.forEach(s => s.gain = 1.0);
         } else {
-            const target = state.mode === 'generic' ? state.subbands : state.customSliders;
-            if (target && target.length > 0) {
-                target.forEach(s => s.gain = 1.0);
-                renderEqSliders();
-                await applyEqualizer();
-            }
+            // Reset custom sliders
+            state.customSliders.forEach(s => s.gain = 1.0);
         }
+        
+        await applyEqualizer();
     });
 
     if (btnClearSubBand) btnClearSubBand.addEventListener("click", async () => {
@@ -809,20 +897,24 @@ function bindToggles() {
             if (e.target.value === 'ai') {
                 // Switching TO AI Mode
                 if (state.aiStems.length > 0) {
-                    // Already have stems, just switch UI
+                    // Already have stems, update sliders to show stem names
                     state.aiMode = true;
-                    renderAISliders();
+                    updateSlidersForAI();
                     await applyEqualizer();
+                    await refreshOutputs();
                 } else {
-                    // Need to run processing
+                    // Need to run AI processing first
                     await runAI();
                 }
             } else {
                 // Switching TO Custom Mode
                 state.aiMode = false;
-                if (state.mode === 'generic') renderEqSliders();
-                else await renderCustomizedSliders();
+                // Update sliders back to custom names and ensure event handler is correct
+                if (state.mode !== 'generic' && state.customSliders.length > 0) {
+                    updateSlidersForCustom();
+                }
                 await applyEqualizer();
+                await refreshOutputs();
             }
         });
     });

@@ -5,8 +5,8 @@ from django.views.decorators.csrf import csrf_exempt
 from django.conf import settings
 
 import numpy as np
-from .utils.fft import fft_radix2, ifft_radix2, stft_spectrogram
-from .utils.fft_bridge import fft_cpp
+# from .utils.fft import fft_radix2, ifft_radix2, stft_spectrogram
+from .utils.fft_bridge import fft, ifft, fftfreq, stft_spectrogram
 from .ai_models.orchestrator import AIOrchestrator
 
 MEDIA_ROOT = getattr(settings, "MEDIA_ROOT", os.path.join(settings.BASE_DIR, "media"))
@@ -154,8 +154,8 @@ def upload_signal(request):
     xz = np.zeros(n2, dtype=np.float32)
     xz[:n] = x_float
 
-    # Default initial FFT using Numpy
-    input_X_complex = np.fft.fft(xz)
+    # Initial FFT using native DLL bridge
+    input_X_complex = fft(xz)
 
     REG[sid] = {
         "file_name": f.name,
@@ -190,16 +190,12 @@ def _compute_spectrum(x: np.ndarray, sr: int, scale: str, backend: str):
     window = np.hanning(len(x))
     x_windowed = x * window
 
-    if backend == 'cpp':
-        n2 = _next_pow2(len(x))
-        xz = np.zeros(n2, dtype=np.float32)
-        xz[:len(x)] = x_windowed
-        X = fft_cpp(xz)
-        mag = np.abs(X[:n2 // 2])
-    else:
-        # Numpy fallback
-        X = np.fft.fft(x_windowed)
-        mag = np.abs(X[:len(X) // 2])
+    # Use DLL FFT for all computations
+    n2 = _next_pow2(len(x))
+    xz = np.zeros(n2, dtype=np.float32)
+    xz[:len(x)] = x_windowed
+    X = fft(xz)
+    mag = np.abs(X[:n2 // 2])
 
     # 2. Remove DC Offset
     if len(mag) > 0:
@@ -437,13 +433,9 @@ def equalize(request, sid):
     padded_x = np.zeros(n2, dtype=np.float32)
     padded_x[:n] = xz
 
-    try:
-        X = fft_cpp(padded_x)
-    except:
-        X = np.fft.fft(padded_x)
-
-
-    freqs = np.fft.fftfreq(n2, d=1.0 / sr)
+    # FFT using native DLL
+    X = fft(padded_x)
+    freqs = fftfreq(n2, d=1.0 / sr)
 
     def apply_windows(windows, gain):
         for w in windows:
@@ -463,7 +455,8 @@ def equalize(request, sid):
         REG[sid]["custom_sliders"] = sliders
         for s in sliders: apply_windows(s.get("windows", []), float(s.get("gain", 1.0)))
 
-    xr = np.fft.ifft(X).real[:n].astype(np.float32)
+    # IFFT using native DLL
+    xr = ifft(X).real[:n].astype(np.float32)
 
     REG[sid]["output_x"] = xr
     _make_output_for_signal(sid)
