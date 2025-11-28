@@ -21,3 +21,6 @@ equalizer_app/__pycache__
 media/signals
 # asteroid
 asteroid/egs/wsj0-mix-var/Multi-Decoder-DPRNN/utils
+equalizer_app/ai_models/human/output
+equalizer_app/ai_models/__pycache__
+.vscode
