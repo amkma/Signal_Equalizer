@@ -34,7 +34,6 @@ const fileInput = firstSel("#file-hidden");
 const dropZone = firstSel("#drop-zone");
 const modeSelect = firstSel("#mode-select");
 
-// CHANGED: AI Panel Switch Container instead of Button
 const aiSwitchContainer = firstSel("#ai-switch-container");
 const radioCustom = firstSel("#mode-custom");
 const radioAI = firstSel("#mode-ai");
@@ -68,7 +67,6 @@ const fileSchemeInput = firstSel("#file-scheme");
 const btnResetEq = firstSel("#btn-reset-eq");
 
 // AI / Players
-// const btnRunAI = firstSel("#btn-run-ai"); // Removed direct usage
 const audioIn = firstSel("#audio-in");
 const audioOut = firstSel("#audio-out");
 const btnPlayInput = firstSel("#play-input");
@@ -116,6 +114,21 @@ async function apiGet(url) {
     if (!r.ok) throw new Error(await r.text());
     const ct = r.headers.get("content-type") || "";
     return ct.includes("application/json") ? r.json() : r.arrayBuffer();
+}
+
+// ---------- UI Helpers ----------
+function updateButtonVisibility() {
+    const genericTools = $('#generic-tools'); // Container for Save/Load/Clear
+
+    if (state.mode === 'generic') {
+        // Generic Mode: Show Save/Load/Clear, Hide Reset
+        if (genericTools) genericTools.style.display = 'flex';
+        if (btnResetEq) btnResetEq.style.display = 'none';
+    } else {
+        // Other Modes: Hide Save/Load/Clear, Show Reset
+        if (genericTools) genericTools.style.display = 'none';
+        if (btnResetEq) btnResetEq.style.display = 'inline-block';
+    }
 }
 
 // ---------- Global State Management ----------
@@ -175,7 +188,9 @@ function forceSwitchToCustom() {
     // Hide panel if visible
     const p = firstSel("#ai-panel");
     if (p && !p.classList.contains("hidden")) p.classList.add("hidden");
-    $('#generic-tools').style.display = (state.mode === 'generic') ? 'flex' : 'none';
+
+    // Ensure visibility is consistent
+    updateButtonVisibility();
 }
 
 // ---------- File Upload Logic ----------
@@ -238,7 +253,7 @@ async function doUploadFile(file) {
     }
 }
 
-// ... [Draw Logic functions: drawGridLogic, drawSpectrum, drawWavePreview, drawSpectrogram, refreshSpectrograms, refreshOutputs, refreshAll - Unchanged] ...
+// ... [Draw Logic functions] ...
 function drawGridLogic(ctx, W, H, marginL, marginR, xLabels, yLabels, xTitle, yTitle, gridColor = "#444", textColor = "#aaa") {
     ctx.strokeStyle = gridColor;
     ctx.fillStyle = textColor;
@@ -551,12 +566,13 @@ function bindSpectrumSelection() {
 }
 
 function renderEqSliders() {
+    // Ensure visibility states are correct whenever sliders are re-rendered
+    updateButtonVisibility();
+
     if (state.mode === 'generic') {
         renderGenericSubbands();
-        $('#generic-tools').style.display = 'flex';
     } else {
         renderCustomizedSliders();
-        $('#generic-tools').style.display = 'none';
     }
 }
 
@@ -574,12 +590,12 @@ async function runAI() {
         if (resp.status === "ok") {
             state.aiMode = true;
             state.aiStems = resp.stems;
-            
+
             // Initialize stem gains from current slider values if they exist
             state.stemGains = {};
             resp.stems.forEach((stem, idx) => {
                 // Try to match stem name with existing slider
-                const slider = state.customSliders.find(s => 
+                const slider = state.customSliders.find(s =>
                     s.name.toLowerCase() === stem.toLowerCase() ||
                     s.id === `custom${idx}`
                 );
@@ -594,7 +610,7 @@ async function runAI() {
 
             // Update sliders to match stem names, preserving values
             updateSlidersForAI();
-            
+
             // Apply initial mix with stem gains and refresh
             await applyEqualizer();
 
@@ -622,7 +638,7 @@ function updateSlidersForAI() {
     // Update slider labels and data attributes to match AI stems
     // but preserve their current values
     const sliderInputs = eqPanel.querySelectorAll('input[type="range"]');
-    
+
     state.aiStems.forEach((stem, idx) => {
         if (idx < sliderInputs.length) {
             const input = sliderInputs[idx];
@@ -631,22 +647,22 @@ function updateSlidersForAI() {
                 const title = row.querySelector('.sb-title');
                 const gainDisplay = row.querySelector('.sb-gain');
                 const capStem = stem.charAt(0).toUpperCase() + stem.slice(1);
-                
+
                 if (title) title.textContent = capStem;
-                
+
                 // Update data attribute for AI processing
                 input.dataset.stem = stem;
                 delete input.dataset.id; // Remove custom ID
-                
+
                 // Preserve current value and sync stemGains
                 const currentValue = +input.value;
                 state.stemGains[stem] = currentValue / 100.0;
-                
+
                 if (gainDisplay) gainDisplay.textContent = `${currentValue.toFixed(0)}%`;
             }
         }
     });
-    
+
     // Update event handler to work with stem data
     updateSliderEventHandler();
 }
@@ -655,7 +671,7 @@ function updateSlidersForCustom() {
     if (!eqPanel) return;
     // Restore custom slider labels and data attributes
     const sliderInputs = eqPanel.querySelectorAll('input[type="range"]');
-    
+
     state.customSliders.forEach((slider, idx) => {
         if (idx < sliderInputs.length) {
             const input = sliderInputs[idx];
@@ -663,35 +679,35 @@ function updateSlidersForCustom() {
             if (row) {
                 const title = row.querySelector('.sb-title');
                 const gainDisplay = row.querySelector('.sb-gain');
-                
+
                 if (title) title.textContent = slider.name;
-                
+
                 // Update data attribute for custom processing
                 input.dataset.id = slider.id;
                 delete input.dataset.stem; // Remove AI stem name
-                
+
                 // Sync slider gain from current value
                 const currentValue = +input.value;
                 slider.gain = currentValue / 100.0;
-                
+
                 if (gainDisplay) gainDisplay.textContent = `${currentValue.toFixed(0)}%`;
             }
         }
     });
-    
+
     // Update event handler to work with custom data
     updateSliderEventHandler();
 }
 
 function updateSliderEventHandler() {
     if (!eqPanel) return;
-    
+
     // Set unified event handler that works for both modes
     eqPanel.oninput = async (e) => {
         const r = e.target;
         if (r.tagName === "INPUT") {
             const val = +r.value;
-            
+
             if (state.aiMode && r.dataset.stem) {
                 // AI mode - update stemGains
                 const stem = r.dataset.stem;
@@ -787,7 +803,7 @@ async function renderCustomizedSliders() {
             row.innerHTML = `<div class="sb-title">${slider.name}</div><input type="range" min="0" max="100" step="1" value="${percentage}" data-id="${slider.id}"/><span class="sb-gain">${percentage.toFixed(0)}%</span>`;
             eqPanel.appendChild(row);
         });
-        
+
         // Set unified event handler
         updateSliderEventHandler();
     } catch (err) {
@@ -805,7 +821,7 @@ async function applyEqualizerDebounced() {
 async function applyEqualizer() {
     if (!state.signalId) return;
     let payload = {};
-    
+
     // Only use AI mode if we actually have stems
     if (state.aiMode && state.aiStems.length > 0) {
         payload = {mode: "ai_mix", gains: state.stemGains};
@@ -815,7 +831,7 @@ async function applyEqualizer() {
             sliders: state.customSliders
         };
     }
-    
+
     try {
         if (spectrumLoader) spectrumLoader.classList.remove("hidden");
         await apiPost(`/api/equalize/${state.signalId}/`, payload);
@@ -830,7 +846,7 @@ async function applyEqualizer() {
 function bindToggles() {
     if (btnResetEq) btnResetEq.addEventListener("click", async () => {
         if (!state.signalId) return;
-        
+
         // Reset all slider values to 100%
         const sliderInputs = eqPanel.querySelectorAll('input[type="range"]');
         sliderInputs.forEach(input => {
@@ -838,7 +854,7 @@ function bindToggles() {
             const gainDisplay = input.parentElement.querySelector('.sb-gain');
             if (gainDisplay) gainDisplay.textContent = '100%';
         });
-        
+
         if (state.aiMode && state.aiStems.length > 0) {
             // Reset AI stem gains
             Object.keys(state.stemGains).forEach(k => state.stemGains[k] = 1.0);
@@ -849,7 +865,7 @@ function bindToggles() {
             // Reset custom sliders
             state.customSliders.forEach(s => s.gain = 1.0);
         }
-        
+
         await applyEqualizer();
     });
 
@@ -868,6 +884,7 @@ function bindToggles() {
 
         // Update UI for new mode
         updateAIVisibility(state.mode);
+        updateButtonVisibility(); // Immediately update button state
 
         // Force Custom logic when switching modes
         state.aiMode = false;
@@ -1048,6 +1065,7 @@ function init() {
     bindCanvasSeeking();
     setGlobalState(false);
     setStatus("Ready.");
+    updateButtonVisibility(); // Initialize visibility
 }
 
 document.addEventListener("DOMContentLoaded", init);
